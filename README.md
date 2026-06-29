@@ -168,7 +168,7 @@ pathscout review --limit 10
 pathscout review --tier "Act Now"
 ```
 
-Use `suppress` to hide a finding from future Markdown digests while keeping the raw observation in SQLite and the finding marked in JSON:
+Use `suppress` to hide a finding from later Markdown digests while keeping the raw observation in SQLite and the finding marked in JSON:
 
 ```bash
 pathscout suppress <finding-id> --reason "Not a fit" --expires 2026-12-31
@@ -181,7 +181,3 @@ Careers pages are parsed into separate role findings when PathScout can identify
 PathScout follows scanner-style findings: stable IDs, evidence, severity-like tiers, reasons, flags, and suppressions.
 
 The config split borrows from dbt-style separation of personal profile from project config. Source IDs follow the pre-commit convention: stable machine IDs plus human names. Suppressions borrow from security scanners: structured ignores with reasons and optional expiration dates.
-
-## Future Marketplace Direction
-
-PathScout v0.2 is open-source local software. Future hosted intro workflows should be explicit opt-in only. See `docs/marketplace.md` for the product direction.
