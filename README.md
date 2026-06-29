@@ -66,6 +66,7 @@ Outputs:
 - `data/pathscout.sqlite`: local state and dedupe history.
 - `outputs/latest.json`: canonical machine-readable findings artifact.
 - `outputs/latest.md`: human-readable digest rendered from the JSON findings.
+- `outputs/packages/`: optional portable opportunity packages created from findings.
 - `config/profile.json`: personal fit profile.
 - `config/background.json`: private candidate context and proof points.
 - `config/sources.json`: source adapter configuration.
@@ -137,6 +138,7 @@ pathscout review
 pathscout explain <finding-id>
 pathscout notes <finding-id> --add "Question to verify before outreach"
 pathscout thesis <finding-id>
+pathscout package <finding-id>
 pathscout suppress <finding-id> --reason "Not a fit"
 pathscout run --format json
 pathscout run --format markdown
@@ -201,7 +203,17 @@ pathscout suppress <finding-id> --reason "Not a fit" --expires 2026-12-31
 
 Careers pages are parsed into separate role findings when PathScout can identify role-title rows. If a page does not expose clear role titles, PathScout falls back to one page-level finding.
 
-`config/background.json`, `data/notes.json`, and `outputs/theses/` are ignored by default because they may contain private candidate context.
+## Package Exports
+
+Use `package` to create a portable, human-readable and agent-readable opportunity package from a finding in `outputs/latest.json`:
+
+```bash
+pathscout package <finding-id>
+```
+
+Each package includes a manifest, a human Markdown brief, agent instructions, and canonical JSON data under `outputs/packages/`. See `docs/artifacts.md` for the artifact contract.
+
+`config/background.json`, `data/notes.json`, `outputs/theses/`, and `outputs/packages/` are ignored by default because they may contain private candidate context.
 
 ## Design Borrowed From
 

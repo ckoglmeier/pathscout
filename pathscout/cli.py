@@ -7,7 +7,7 @@ import warnings
 from datetime import date
 from pathlib import Path
 
-from .artifacts import build_artifact, write_json_artifact, write_markdown_artifact
+from .artifacts import build_artifact, write_json_artifact, write_markdown_artifact, write_package_from_artifact
 from .config import (
     DEFAULT_BACKGROUND,
     DEFAULT_PORTFOLIO,
@@ -42,6 +42,7 @@ from .workflow import (
 DEFAULT_DB = Path("data/pathscout.sqlite")
 DEFAULT_JSON_OUT = Path("outputs/latest.json")
 DEFAULT_MD_OUT = Path("outputs/latest.md")
+DEFAULT_PACKAGE_OUT = Path("outputs/packages")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -92,6 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
     thesis_parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Path to private background JSON.")
     thesis_parser.add_argument("--notes", default=str(DEFAULT_NOTES), help="Path to notes JSON.")
     thesis_parser.add_argument("--out-dir", default=str(DEFAULT_THESES_DIR), help="Directory for generated thesis files.")
+
+    package_parser = subparsers.add_parser("package", help="Export a portable opportunity package for a finding.")
+    package_parser.add_argument("finding_id", help="Finding ID or unique prefix to package.")
+    package_parser.add_argument("--json", dest="json_path", default=str(DEFAULT_JSON_OUT), help="Path to JSON run artifact.")
+    package_parser.add_argument("--out-dir", default=str(DEFAULT_PACKAGE_OUT), help="Directory for package exports.")
 
     suppress_parser = subparsers.add_parser("suppress", help="Suppress a finding by ID.")
     suppress_parser.add_argument("finding_id", help="Finding ID or content hash to suppress.")
@@ -239,6 +245,9 @@ def main(argv: list[str] | None = None) -> int:
             args.finding_id,
         )
 
+    if args.command == "package":
+        return package_finding(Path(args.json_path), args.finding_id, Path(args.out_dir))
+
     if args.command == "suppress":
         return suppress_finding(Path(args.suppressions), args.finding_id, args.reason, args.expires_at, args.scope)
 
@@ -359,6 +368,21 @@ def thesis_command(
     if not background:
         print(f"Warning: missing optional background file: {background_path}")
     print(f"Wrote {path}")
+    return 0
+
+
+def package_finding(path: Path, finding_id: str, out_dir: Path) -> int:
+    if not path.exists():
+        print(f"Missing JSON artifact: {path}")
+        return 2
+    with path.open("r", encoding="utf-8") as handle:
+        artifact = json.load(handle)
+    try:
+        package_dir = write_package_from_artifact(artifact, finding_id, out_dir)
+    except ValueError as exc:
+        print(str(exc))
+        return 2
+    print(f"Wrote package {package_dir}")
     return 0
 
 

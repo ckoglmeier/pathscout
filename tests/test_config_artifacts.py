@@ -9,7 +9,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from pathscout.artifacts import build_artifact, normalize_finding, render_markdown
+from pathscout.artifacts import build_artifact, normalize_finding, render_markdown, write_package_from_artifact
 from pathscout.cli import main
 from pathscout.config import build_runtime_config, ensure_default_files, load_profile
 from pathscout.db import init_db
@@ -227,6 +227,52 @@ class ConfigArtifactTests(unittest.TestCase):
         self.assertIn("## Suppressed", markdown)
         self.assertNotIn("### Chief Product Officer", markdown)
 
+    def test_run_artifact_includes_artifact_metadata_and_evidence_quality(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        init_db(conn)
+        config = {
+            **sources_config(),
+            "profile": profile_config(),
+            "scoring": profile_config()["scoring"],
+            "watchlist": watchlist_config(),
+            "suppressions": {"schema_version": 1, "suppressions": []},
+        }
+        result = run_sources(conn, config)
+        artifact = build_artifact(conn, config, result, 7, False, {"command": "run", "digest_window_days": 7})
+        finding = artifact["findings"][0]
+        markdown = render_markdown(artifact)
+        self.assertEqual(artifact["artifact_type"], "run_artifact")
+        self.assertTrue(artifact["artifact_id"].startswith("run_"))
+        self.assertNotIn("+", artifact["artifact_id"])
+        self.assertEqual(finding["evidence_strength"], "strong")
+        self.assertIn("missing_posted_date", finding["evidence_warnings"])
+        self.assertIn("Strength: strong", markdown)
+        self.assertIn("missing_posted_date", markdown)
+
+    def test_page_level_fallback_evidence_is_marked_lower_confidence(self):
+        finding = normalize_finding(
+            {
+                "source_id": "careers",
+                "source_name": "Careers",
+                "source_type": "watchlist_careers",
+                "company": "Fallback Robotics",
+                "title": "Fallback Robotics careers",
+                "url": "https://example.com/careers",
+                "text": "Careers open roles product commercial",
+                "evidence_type": "job",
+                "content_hash": "fallback123",
+                "observed_at": "2026-06-29T00:00:00+00:00",
+                "score": 50,
+                "tier": "Watch Signal",
+                "reasons": [],
+                "flags": [],
+            },
+            {"schema_version": 1, "suppressions": []},
+        )
+        self.assertEqual(finding["evidence_strength"], "weak")
+        self.assertIn("page_level_fallback", finding["evidence_warnings"])
+
     def test_cli_format_options_write_expected_artifacts(self):
         for output_format, expected_json, expected_md in [
             ("json", True, False),
@@ -293,6 +339,7 @@ class ConfigArtifactTests(unittest.TestCase):
                             "company": "Test Robotics",
                             "title": "Product Lead",
                             "url": "https://example.com/job",
+                            "source_id": "manual",
                             "source_name": "Manual",
                             "source_type": "manual",
                             "evidence_type": "job",
@@ -302,6 +349,7 @@ class ConfigArtifactTests(unittest.TestCase):
                             "reasons": ["target role title signal: product lead", "domain fit: robotics"],
                             "flags": [],
                             "suppressed": False,
+                            "suppression": None,
                             "text": "Series B robotics role reports to CEO.",
                         }
                     ],
@@ -433,6 +481,115 @@ class ConfigArtifactTests(unittest.TestCase):
         self.assertIn("Verify deployment expansion.", thesis)
         self.assertNotIn("## Job Description", thesis)
 
+    def test_package_command_writes_human_and_agent_readable_export(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            artifact_path = root / "latest.json"
+            finding_id = "abcdef1234567890"
+            write_json(
+                artifact_path,
+                {
+                    "artifact_type": "run_artifact",
+                    "artifact_id": "run_20260629T120000Z",
+                    "schema_version": 1,
+                    "pathscout_version": "0.2.0",
+                    "generated_at": "2026-06-29T12:00:00+00:00",
+                    "source_stats": [],
+                    "errors": [],
+                    "findings": [
+                        {
+                            "id": finding_id,
+                            "content_hash": finding_id,
+                            "tier": "Act Now",
+                            "score": 90,
+                            "company": "Test Robotics",
+                            "title": "Product Lead",
+                            "url": "https://example.com/job",
+                            "source_id": "manual",
+                            "source_name": "Manual",
+                            "source_type": "manual",
+                            "evidence_type": "job",
+                            "evidence_strength": "strong",
+                            "evidence_warnings": ["missing_posted_date"],
+                            "observed_at": "2026-06-29T12:00:00+00:00",
+                            "reasons": ["target role title signal: product lead"],
+                            "flags": [],
+                            "suppressed": False,
+                            "suppression": None,
+                            "text": "Product Lead role at Test Robotics.",
+                        }
+                    ],
+                },
+            )
+            output = StringIO()
+            with redirect_stdout(output):
+                rc = main(["package", finding_id[:12], "--json", str(artifact_path), "--out-dir", str(root / "packages")])
+            package_dir = root / "packages" / f"test-robotics-{finding_id[:12]}"
+            manifest = json.loads((package_dir / "manifest.json").read_text(encoding="utf-8"))
+            opportunity = json.loads((package_dir / "data/opportunity.json").read_text(encoding="utf-8"))
+            evidence = json.loads((package_dir / "data/evidence.json").read_text(encoding="utf-8"))
+            package_md = (package_dir / "package.md").read_text(encoding="utf-8")
+            agent_md = (package_dir / "agent.md").read_text(encoding="utf-8")
+        self.assertEqual(rc, 0)
+        self.assertEqual(manifest["artifact_type"], "opportunity_package")
+        self.assertEqual(manifest["package_type"], "opportunity_brief")
+        self.assertEqual(len(manifest["resources"]), 5)
+        self.assertEqual(opportunity["finding_id"], finding_id)
+        self.assertEqual(evidence["sources"][0]["content_hash"], finding_id)
+        self.assertIn("Test Robotics: Opportunity Brief", package_md)
+        self.assertIn("Agent Context", agent_md)
+        self.assertNotIn("job description", package_md.lower())
+
+    def test_package_command_fails_for_unknown_finding(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            artifact_path = root / "latest.json"
+            write_json(artifact_path, {"schema_version": 1, "findings": []})
+            output = StringIO()
+            with redirect_stdout(output):
+                rc = main(["package", "missing123", "--json", str(artifact_path), "--out-dir", str(root / "packages")])
+        self.assertEqual(rc, 2)
+        self.assertIn("Finding not found", output.getvalue())
+
+    def test_write_package_marks_suppressed_findings(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            finding_id = "suppressedabcdef"
+            artifact = {
+                "artifact_type": "run_artifact",
+                "artifact_id": "run_20260629T120000Z",
+                "schema_version": 1,
+                "source_stats": [],
+                "errors": [],
+                "findings": [
+                    {
+                        "id": finding_id,
+                        "content_hash": finding_id,
+                        "company": "Hidden AI",
+                        "title": "Hidden signal",
+                        "tier": "Watch Signal",
+                        "score": 40,
+                        "url": "",
+                        "source_id": "watch",
+                        "source_name": "Watch",
+                        "source_type": "watchlist",
+                        "evidence_type": "hidden_search",
+                        "evidence_strength": "medium",
+                        "evidence_warnings": [],
+                        "reasons": [],
+                        "flags": [],
+                        "suppressed": True,
+                        "suppression": {"reason": "Not a fit"},
+                        "text": "",
+                    }
+                ],
+            }
+            package_dir = write_package_from_artifact(artifact, finding_id, root / "packages")
+            opportunity = json.loads((package_dir / "data/opportunity.json").read_text(encoding="utf-8"))
+            package_md = (package_dir / "package.md").read_text(encoding="utf-8")
+        self.assertTrue(opportunity["suppressed"])
+        self.assertIn("Suppressed: true (Not a fit)", package_md)
+
     def test_suppress_adds_structured_suppression(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             suppressions_path = Path(tmpdir) / "suppressions.json"
@@ -507,6 +664,15 @@ class ConfigArtifactTests(unittest.TestCase):
         )
         for term in ["CK", "Radar", "Sonar"]:
             self.assertNotIn(term, sample_text)
+
+    def test_docs_describe_artifact_contract_and_package_outputs_are_ignored(self):
+        docs = Path("docs/artifacts.md").read_text(encoding="utf-8")
+        gitignore = Path(".gitignore").read_text(encoding="utf-8")
+        readme = Path("README.md").read_text(encoding="utf-8")
+        self.assertIn("run_artifact", docs)
+        self.assertIn("opportunity_package", docs)
+        self.assertIn("pathscout package <finding-id>", readme)
+        self.assertIn("outputs/packages/", gitignore)
 
 
 if __name__ == "__main__":

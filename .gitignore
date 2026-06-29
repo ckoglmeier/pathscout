@@ -6,3 +6,4 @@ outputs/*.md
 outputs/*.json
 outputs/theses/
 config/background.json
+outputs/packages/
