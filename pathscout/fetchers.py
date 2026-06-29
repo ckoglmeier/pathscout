@@ -135,7 +135,7 @@ def fetch_watchlist_careers(source: dict[str, Any]) -> list[FetchedItem]:
                         title=title,
                         url=url,
                         text=text,
-                        evidence_type="job",
+                        evidence_type="job_page",
                     )
                 )
             break

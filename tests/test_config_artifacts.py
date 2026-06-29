@@ -9,7 +9,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from pathscout.artifacts import build_artifact, render_markdown
+from pathscout.artifacts import build_artifact, normalize_finding, render_markdown
 from pathscout.cli import main
 from pathscout.config import build_runtime_config, ensure_default_files, load_profile
 from pathscout.db import init_db
@@ -97,6 +97,7 @@ class ConfigArtifactTests(unittest.TestCase):
                 self.assertEqual(main(["init", "--no-input"]), 0)
                 for path in [
                     "config/profile.json",
+                    "config/background.json",
                     "config/sources.json",
                     "config/watchlist.json",
                     "config/suppressions.json",
@@ -274,6 +275,164 @@ class ConfigArtifactTests(unittest.TestCase):
         self.assertIn("abcdef123456", output.getvalue())
         self.assertIn("Product Lead", output.getvalue())
 
+    def test_explain_prints_finding_evidence_and_related_notes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            artifact_path = root / "latest.json"
+            notes_path = root / "notes.json"
+            write_json(
+                artifact_path,
+                {
+                    "schema_version": 1,
+                    "findings": [
+                        {
+                            "id": "abcdef123456",
+                            "content_hash": "abcdef123456",
+                            "tier": "Act Now",
+                            "score": 90,
+                            "company": "Test Robotics",
+                            "title": "Product Lead",
+                            "url": "https://example.com/job",
+                            "source_name": "Manual",
+                            "source_type": "manual",
+                            "evidence_type": "job",
+                            "evidence_strength": "strong",
+                            "evidence_warnings": [],
+                            "observed_at": "2026-06-29T12:00:00+00:00",
+                            "reasons": ["target role title signal: product lead", "domain fit: robotics"],
+                            "flags": [],
+                            "suppressed": False,
+                            "text": "Series B robotics role reports to CEO.",
+                        }
+                    ],
+                },
+            )
+            write_json(
+                notes_path,
+                {
+                    "schema_version": 1,
+                    "notes": [
+                        {
+                            "id": "note_1",
+                            "finding_id": "abcdef123456",
+                            "company": "",
+                            "body": "Ask whether the product team reports to the founder.",
+                            "created_at": "2026-06-29T12:01:00+00:00",
+                        }
+                    ],
+                },
+            )
+            output = StringIO()
+            with redirect_stdout(output):
+                rc = main(["explain", "abcdef", "--json", str(artifact_path), "--notes", str(notes_path)])
+        self.assertEqual(rc, 0)
+        self.assertIn("Strength: strong", output.getvalue())
+        self.assertIn("Ask whether", output.getvalue())
+
+    def test_notes_adds_and_lists_company_notes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            notes_path = Path(tmpdir) / "notes.json"
+            output = StringIO()
+            with redirect_stdout(output):
+                add_rc = main(["notes", "--company", "Test Robotics", "--add", "Check warm intro path.", "--notes", str(notes_path)])
+                list_rc = main(["notes", "--company", "Test Robotics", "--notes", str(notes_path)])
+            data = json.loads(notes_path.read_text(encoding="utf-8"))
+        self.assertEqual(add_rc, 0)
+        self.assertEqual(list_rc, 0)
+        self.assertEqual(data["notes"][0]["company"], "Test Robotics")
+        self.assertIn("Check warm intro path.", output.getvalue())
+
+    def test_thesis_writes_role_thesis_without_job_description(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            artifact_path = root / "latest.json"
+            profile_path = root / "profile.json"
+            background_path = root / "background.json"
+            notes_path = root / "notes.json"
+            out_dir = root / "theses"
+            write_json(
+                artifact_path,
+                {
+                    "schema_version": 1,
+                    "findings": [
+                        {
+                            "id": "abcdef123456",
+                            "content_hash": "abcdef123456",
+                            "tier": "Hidden Search Hypothesis",
+                            "score": 72,
+                            "company": "Test Robotics",
+                            "title": "Strong watchlist company",
+                            "url": "https://example.com",
+                            "source_name": "Watchlist",
+                            "source_type": "watchlist",
+                            "evidence_type": "hidden_search",
+                            "evidence_strength": "medium",
+                            "evidence_warnings": [],
+                            "observed_at": "2026-06-29T12:00:00+00:00",
+                            "reasons": ["hidden-search company signal: series b", "domain fit: robotics"],
+                            "flags": [],
+                            "suppressed": False,
+                            "text": "Series B robotics company scaling deployments.",
+                        }
+                    ],
+                },
+            )
+            write_json(profile_path, profile_config())
+            write_json(
+                background_path,
+                {
+                    "schema_version": 1,
+                    "summary": "Product and operations lead.",
+                    "strengths": ["Turns ambiguous deployment problems into operating plans."],
+                    "proof_points": ["Launched a product motion with first customer deployments."],
+                    "best_environments": ["Early-stage robotics teams."],
+                    "avoid_environments": [],
+                    "constraints": [],
+                    "network_context": [],
+                },
+            )
+            write_json(
+                notes_path,
+                {
+                    "schema_version": 1,
+                    "notes": [
+                        {
+                            "id": "note_1",
+                            "finding_id": "abcdef123456",
+                            "company": "",
+                            "body": "Verify deployment expansion.",
+                            "created_at": "2026-06-29T12:01:00+00:00",
+                        }
+                    ],
+                },
+            )
+            output = StringIO()
+            with redirect_stdout(output):
+                rc = main(
+                    [
+                        "thesis",
+                        "abcdef",
+                        "--json",
+                        str(artifact_path),
+                        "--profile",
+                        str(profile_path),
+                        "--background",
+                        str(background_path),
+                        "--notes",
+                        str(notes_path),
+                        "--out-dir",
+                        str(out_dir),
+                    ]
+                )
+            thesis_path = out_dir / "test-robotics-abcdef123456.md"
+            thesis = thesis_path.read_text(encoding="utf-8")
+        self.assertEqual(rc, 0)
+        self.assertIn("Wrote", output.getvalue())
+        self.assertIn("## Proposed Function", thesis)
+        self.assertIn("## Evidence To Verify", thesis)
+        self.assertIn("Verify deployment expansion.", thesis)
+        self.assertNotIn("## Job Description", thesis)
+
     def test_suppress_adds_structured_suppression(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             suppressions_path = Path(tmpdir) / "suppressions.json"
@@ -313,6 +472,27 @@ class ConfigArtifactTests(unittest.TestCase):
         unsuppressed = [finding for finding in artifact["findings"] if not finding["suppressed"]]
         for finding in unsuppressed:
             self.assertIn(finding["title"], markdown)
+
+    def test_evidence_strength_marks_careers_fallback_weaker_than_role_finding(self):
+        base = {
+            "source_id": "careers",
+            "source_name": "Careers",
+            "source_type": "watchlist_careers",
+            "company": "Test Robotics",
+            "url": "https://example.com/careers",
+            "text": "Careers open roles product commercial",
+            "content_hash": "hash",
+            "observed_at": "2026-06-29T12:00:00+00:00",
+            "score": 50,
+            "tier": "Watch Signal",
+            "reasons": [],
+            "flags": [],
+        }
+        role = normalize_finding({**base, "title": "Product Lead", "evidence_type": "job"}, {"schema_version": 1, "suppressions": []})
+        fallback = normalize_finding({**base, "title": "Careers", "evidence_type": "job_page"}, {"schema_version": 1, "suppressions": []})
+        self.assertEqual(role["evidence_strength"], "strong")
+        self.assertEqual(fallback["evidence_strength"], "weak")
+        self.assertIn("page_level_fallback", fallback["evidence_warnings"])
 
     def test_public_samples_do_not_include_private_names(self):
         sample_text = "\n".join(

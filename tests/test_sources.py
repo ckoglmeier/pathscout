@@ -54,7 +54,7 @@ class SourceTests(unittest.TestCase):
 
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].company, "Test Robotics")
-        self.assertEqual(items[0].evidence_type, "job")
+        self.assertEqual(items[0].evidence_type, "job_page")
 
     def test_watchlist_careers_timeout_on_one_company_does_not_abort_source(self):
         with tempfile.TemporaryDirectory() as tmpdir:

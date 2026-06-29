@@ -12,7 +12,7 @@ It fetches broad signals, scores them against a personal fit profile, stores ded
 
 ## What PathScout Is Not
 
-- It is not a hosted marketplace in v0.2.
+- It is not a hosted marketplace.
 - It is not a recruiting CRM.
 - It is not a general-purpose job board scraper.
 - It does not send your profile, watchlist, or findings anywhere by default.
@@ -67,6 +67,7 @@ Outputs:
 - `outputs/latest.json`: canonical machine-readable findings artifact.
 - `outputs/latest.md`: human-readable digest rendered from the JSON findings.
 - `config/profile.json`: personal fit profile.
+- `config/background.json`: private candidate context and proof points.
 - `config/sources.json`: source adapter configuration.
 - `config/watchlist.json`: curated company list.
 - `config/suppressions.json`: structured ignored findings.
@@ -133,6 +134,9 @@ pathscout doctor
 pathscout watchlist
 pathscout portfolio
 pathscout review
+pathscout explain <finding-id>
+pathscout notes <finding-id> --add "Question to verify before outreach"
+pathscout thesis <finding-id>
 pathscout suppress <finding-id> --reason "Not a fit"
 pathscout run --format json
 pathscout run --format markdown
@@ -168,6 +172,27 @@ pathscout review --limit 10
 pathscout review --tier "Act Now"
 ```
 
+Use `explain` to inspect why a finding surfaced:
+
+```bash
+pathscout explain <finding-id>
+```
+
+Use `notes` to keep local judgment attached to a finding or company:
+
+```bash
+pathscout notes <finding-id> --add "Ask a former employee whether this team is still founder-led"
+pathscout notes --company "Northstar Robotics"
+```
+
+Use `thesis` to generate a local role-thesis package from a finding:
+
+```bash
+pathscout thesis <finding-id>
+```
+
+Thesis packages are written to `outputs/theses/` and are generated from the same JSON finding objects used by review and Markdown digests. They are role-thesis drafts, not generated job descriptions.
+
 Use `suppress` to hide a finding from later Markdown digests while keeping the raw observation in SQLite and the finding marked in JSON:
 
 ```bash
@@ -175,6 +200,8 @@ pathscout suppress <finding-id> --reason "Not a fit" --expires 2026-12-31
 ```
 
 Careers pages are parsed into separate role findings when PathScout can identify role-title rows. If a page does not expose clear role titles, PathScout falls back to one page-level finding.
+
+`config/background.json`, `data/notes.json`, and `outputs/theses/` are ignored by default because they may contain private candidate context.
 
 ## Design Borrowed From
 

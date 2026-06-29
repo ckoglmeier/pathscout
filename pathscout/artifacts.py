@@ -94,6 +94,7 @@ def rows_to_raw_findings(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 def normalize_finding(raw: dict[str, Any], suppressions: dict[str, Any]) -> dict[str, Any]:
     finding_id = raw["content_hash"]
     suppression = find_suppression(finding_id, suppressions)
+    evidence_strength, evidence_warnings = classify_evidence(raw)
     return {
         "id": finding_id,
         "company": raw.get("company", ""),
@@ -107,12 +108,38 @@ def normalize_finding(raw: dict[str, Any], suppressions: dict[str, Any]) -> dict
         "source_name": raw.get("source_name", ""),
         "source_type": raw.get("source_type", ""),
         "evidence_type": raw.get("evidence_type", ""),
+        "evidence_strength": evidence_strength,
+        "evidence_warnings": evidence_warnings,
         "observed_at": raw.get("observed_at", ""),
         "content_hash": raw.get("content_hash", ""),
         "suppressed": suppression is not None,
         "suppression": suppression,
         "text": raw.get("text", ""),
     }
+
+
+def classify_evidence(raw: dict[str, Any]) -> tuple[str, list[str]]:
+    evidence_type = str(raw.get("evidence_type", "")).lower()
+    source_type = str(raw.get("source_type", "")).lower()
+    title = str(raw.get("title", "")).lower()
+    warnings: list[str] = []
+
+    if evidence_type in {"job", "job_posting", "role", "recruiter", "search_firm"}:
+        strength = "strong"
+    elif evidence_type in {"hidden_search", "portfolio", "radar_portfolio"}:
+        strength = "medium"
+    else:
+        strength = "weak"
+
+    if evidence_type == "job_page":
+        strength = "weak"
+        warnings.append("page_level_fallback")
+    if source_type in {"web_page", "rss"} and evidence_type in {"web_page", "rss"}:
+        warnings.append("generic_source_evidence")
+    if evidence_type in {"job", "job_page"} and "posted" not in title:
+        warnings.append("missing_posted_date")
+
+    return strength, warnings
 
 
 def find_suppression(finding_id: str, suppressions: dict[str, Any]) -> dict[str, Any] | None:
@@ -197,7 +224,7 @@ def format_finding(finding: dict[str, Any]) -> list[str]:
     lines = [
         f"### {title}{company}{url}",
         "",
-        f"Score: {finding['score']} | Source: {finding['source_name']} | Evidence: {finding['evidence_type']}",
+        f"Score: {finding['score']} | Source: {finding['source_name']} | Evidence: {finding['evidence_type']} | Strength: {finding.get('evidence_strength', 'medium')}",
         "",
         "Why it surfaced:",
     ]
@@ -206,6 +233,9 @@ def format_finding(finding: dict[str, Any]) -> list[str]:
     if finding.get("flags"):
         lines.extend(["", "Flags:"])
         lines.extend(f"- {flag}" for flag in finding["flags"][:5])
+    if finding.get("evidence_warnings"):
+        lines.extend(["", "Evidence warnings:"])
+        lines.extend(f"- {warning}" for warning in finding["evidence_warnings"][:5])
     snippet = textwrap.shorten(" ".join(finding.get("text", "").split()), width=420, placeholder="...")
     if snippet:
         lines.extend(["", f"Evidence snippet: {snippet}"])

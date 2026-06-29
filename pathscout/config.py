@@ -12,6 +12,7 @@ DEFAULT_SOURCES = Path("config/sources.json")
 DEFAULT_WATCHLIST = Path("config/watchlist.json")
 DEFAULT_SUPPRESSIONS = Path("config/suppressions.json")
 DEFAULT_PORTFOLIO = Path("config/portfolio.json")
+DEFAULT_BACKGROUND = Path("config/background.json")
 DEFAULT_CONFIG = DEFAULT_SOURCES
 
 
@@ -21,12 +22,14 @@ def ensure_default_files(
     watchlist_path: Path = DEFAULT_WATCHLIST,
     suppressions_path: Path = DEFAULT_SUPPRESSIONS,
     portfolio_path: Path = DEFAULT_PORTFOLIO,
+    background_path: Path = DEFAULT_BACKGROUND,
 ) -> None:
     write_json_if_missing(profile_path, default_profile())
     write_json_if_missing(sources_path, default_sources(watchlist_path, portfolio_path))
     write_json_if_missing(watchlist_path, default_watchlist())
     write_json_if_missing(suppressions_path, default_suppressions())
     write_json_if_missing(portfolio_path, default_portfolio())
+    write_json_if_missing(background_path, default_background())
     Path("data").mkdir(exist_ok=True)
     Path("outputs").mkdir(exist_ok=True)
 
@@ -101,6 +104,14 @@ def load_suppressions(path: Path = DEFAULT_SUPPRESSIONS) -> dict[str, Any]:
     suppressions = load_json(path)
     validate_schema_version(suppressions, path)
     return suppressions
+
+
+def load_background(path: Path = DEFAULT_BACKGROUND) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    background = load_json(path)
+    validate_schema_version(background, path)
+    return background
 
 
 def build_runtime_config(
@@ -334,4 +345,32 @@ def default_portfolio() -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "notes": "Companies where you have a relationship or investment context.",
         "companies": [],
+    }
+
+
+def default_background() -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "summary": "Fictional operator with product, commercialization, and cross-functional execution experience.",
+        "strengths": [
+            "Turns ambiguous customer problems into focused product and operating plans.",
+            "Builds early go-to-market motion with product, sales, and customer success teams.",
+            "Creates operating cadence across founders, technical teams, and commercial functions.",
+        ],
+        "proof_points": [
+            "Launched a new product motion from discovery through first customer deployments.",
+            "Built a repeatable weekly operating rhythm for a scaling startup team.",
+            "Translated customer implementation friction into roadmap and process changes.",
+        ],
+        "best_environments": [
+            "Early-stage teams with high ambiguity and direct founder access.",
+            "Markets where product, customer, and commercial work are tightly coupled.",
+        ],
+        "avoid_environments": [
+            "Highly siloed teams with little authority to change process or product direction.",
+        ],
+        "constraints": [
+            "Prefers remote-first or hybrid teams with clear travel expectations.",
+        ],
+        "network_context": [],
     }

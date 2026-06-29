@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .artifacts import build_artifact, write_json_artifact, write_markdown_artifact
 from .config import (
+    DEFAULT_BACKGROUND,
     DEFAULT_PORTFOLIO,
     DEFAULT_PROFILE,
     DEFAULT_SOURCES,
@@ -17,11 +18,25 @@ from .config import (
     apply_onboarding_answers,
     build_runtime_config,
     ensure_default_files,
+    load_background,
+    load_profile,
 )
 from .db import connect, init_db
 from .doctor import format_doctor_report, validate_setup
 from .runner import run_sources
 from .watchlist import load_watchlist, summarize_watchlist
+from .workflow import (
+    DEFAULT_NOTES,
+    DEFAULT_THESES_DIR,
+    add_note,
+    find_finding,
+    load_artifact,
+    load_notes,
+    related_notes,
+    render_explanation,
+    render_notes,
+    write_thesis,
+)
 
 
 DEFAULT_DB = Path("data/pathscout.sqlite")
@@ -38,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--environment", help="Answer for: What is the right environment for you?")
     init_parser.add_argument("--role", help="Answer for: What is the right role for you?")
     init_parser.add_argument("--no-input", action="store_true", help="Create defaults without interactive onboarding prompts.")
+    init_parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Path to private background JSON.")
 
     run_parser = subparsers.add_parser("run", help="Fetch sources, score observations, and write artifacts.")
     add_config_paths(run_parser)
@@ -58,6 +74,25 @@ def build_parser() -> argparse.ArgumentParser:
     review_parser.add_argument("--include-suppressed", action="store_true", help="Include suppressed findings.")
     review_parser.add_argument("--limit", type=int, default=20, help="Maximum findings to print.")
 
+    explain_parser = subparsers.add_parser("explain", help="Explain why a finding surfaced.")
+    explain_parser.add_argument("finding_id", help="Finding ID or unique prefix.")
+    explain_parser.add_argument("--json", dest="json_path", default=str(DEFAULT_JSON_OUT), help="Path to JSON artifact.")
+    explain_parser.add_argument("--notes", default=str(DEFAULT_NOTES), help="Path to notes JSON.")
+
+    notes_parser = subparsers.add_parser("notes", help="Add or list local notes for a finding or company.")
+    notes_parser.add_argument("finding_id", nargs="?", help="Finding ID or unique prefix.")
+    notes_parser.add_argument("--company", help="Company name for company-level notes.")
+    notes_parser.add_argument("--add", help="Note body to append.")
+    notes_parser.add_argument("--notes", default=str(DEFAULT_NOTES), help="Path to notes JSON.")
+
+    thesis_parser = subparsers.add_parser("thesis", help="Generate a local role-thesis package for a finding.")
+    thesis_parser.add_argument("finding_id", help="Finding ID or unique prefix.")
+    thesis_parser.add_argument("--json", dest="json_path", default=str(DEFAULT_JSON_OUT), help="Path to JSON artifact.")
+    thesis_parser.add_argument("--profile", default=str(DEFAULT_PROFILE), help="Path to profile JSON.")
+    thesis_parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Path to private background JSON.")
+    thesis_parser.add_argument("--notes", default=str(DEFAULT_NOTES), help="Path to notes JSON.")
+    thesis_parser.add_argument("--out-dir", default=str(DEFAULT_THESES_DIR), help="Directory for generated thesis files.")
+
     suppress_parser = subparsers.add_parser("suppress", help="Suppress a finding by ID.")
     suppress_parser.add_argument("finding_id", help="Finding ID or content hash to suppress.")
     suppress_parser.add_argument("--reason", required=True, help="Human-readable suppression reason.")
@@ -67,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = subparsers.add_parser("doctor", help="Validate config, watchlist, and source readiness.")
     add_config_paths(doctor_parser)
+    doctor_parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Path to private background JSON.")
 
     portfolio_parser = subparsers.add_parser("portfolio", help="Summarize portfolio relationship import.")
     portfolio_parser.add_argument("--portfolio", default=str(DEFAULT_PORTFOLIO), help="Path to portfolio JSON.")
@@ -108,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.watchlist),
             Path(args.suppressions),
             DEFAULT_PORTFOLIO,
+            Path(args.background),
         )
         environment, role = collect_onboarding_answers(args.environment, args.role, args.no_input)
         if environment or role:
@@ -186,6 +223,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "review":
         return review_findings(Path(args.json_path), args.tier, args.include_suppressed, args.limit)
 
+    if args.command == "explain":
+        return explain_finding(Path(args.json_path), Path(args.notes), args.finding_id)
+
+    if args.command == "notes":
+        return notes_command(Path(args.notes), args.finding_id or "", args.company or "", args.add or "")
+
+    if args.command == "thesis":
+        return thesis_command(
+            Path(args.json_path),
+            Path(args.profile),
+            Path(args.background),
+            Path(args.notes),
+            Path(args.out_dir),
+            args.finding_id,
+        )
+
     if args.command == "suppress":
         return suppress_finding(Path(args.suppressions), args.finding_id, args.reason, args.expires_at, args.scope)
 
@@ -199,8 +252,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         for warning in caught:
             print(f"Warning: {warning.message}")
-        print(format_doctor_report(config, Path(args.watchlist), Path(args.profile), Path(args.sources), Path(args.suppressions)))
-        _, errors = validate_setup(config, Path(args.watchlist), Path(args.profile), Path(args.sources), Path(args.suppressions))
+        print(format_doctor_report(config, Path(args.watchlist), Path(args.profile), Path(args.sources), Path(args.suppressions), Path(args.background)))
+        _, errors = validate_setup(config, Path(args.watchlist), Path(args.profile), Path(args.sources), Path(args.suppressions), Path(args.background))
         return 2 if errors else 0
 
     if args.command == "portfolio":
@@ -246,11 +299,66 @@ def review_findings(path: Path, tier: str | None, include_suppressed: bool, limi
         company = finding.get("company") or "Unknown company"
         tier_name = finding.get("tier") or "Unknown"
         score = finding.get("score", 0)
+        strength = finding.get("evidence_strength", "medium")
         url = finding.get("url") or ""
         suffix = f" | {url}" if url else ""
-        print(f"{finding_id} | {tier_name} | {score} | {company} | {title}{suffix}")
+        print(f"{finding_id} | {tier_name} | {score} | {strength} | {company} | {title}{suffix}")
     if len(findings) > limit:
         print(f"... {len(findings) - limit} more")
+    return 0
+
+
+def explain_finding(artifact_path: Path, notes_path: Path, finding_id: str) -> int:
+    try:
+        artifact = load_artifact(artifact_path)
+        finding = find_finding(artifact, finding_id)
+        notes = related_notes(load_notes(notes_path), finding)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError, LookupError) as exc:
+        print(f"Explain error: {exc}")
+        return 2
+    print(render_explanation(finding, notes))
+    return 0
+
+
+def notes_command(notes_path: Path, finding_id: str, company: str, body: str) -> int:
+    try:
+        if body:
+            entry = add_note(notes_path, body, finding_id=finding_id, company=company)
+            target = entry.get("finding_id") or entry.get("company")
+            print(f"Added note {entry['id']} for {target}")
+            return 0
+        if not finding_id and not company:
+            print("Notes error: provide a finding ID or --company")
+            return 2
+        notes = related_notes(load_notes(notes_path), {"id": finding_id, "company": company}, company=company)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"Notes error: {exc}")
+        return 2
+    print(render_notes(notes))
+    return 0
+
+
+def thesis_command(
+    artifact_path: Path,
+    profile_path: Path,
+    background_path: Path,
+    notes_path: Path,
+    out_dir: Path,
+    finding_id: str,
+) -> int:
+    try:
+        artifact = load_artifact(artifact_path)
+        finding = find_finding(artifact, finding_id)
+        profile = load_profile(profile_path)
+        background = load_background(background_path)
+        notes = related_notes(load_notes(notes_path), finding)
+        path = write_thesis(finding, profile, background, notes, out_dir)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError, LookupError, OSError) as exc:
+        print(f"Thesis error: {exc}")
+        return 2
+    if not background:
+        print(f"Warning: missing optional background file: {background_path}")
+    print(f"Wrote {path}")
     return 0
 
 
