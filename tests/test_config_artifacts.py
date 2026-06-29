@@ -7,6 +7,7 @@ import warnings
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from pathscout.artifacts import build_artifact, render_markdown
 from pathscout.cli import main
@@ -93,7 +94,7 @@ class ConfigArtifactTests(unittest.TestCase):
             cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
-                self.assertEqual(main(["init"]), 0)
+                self.assertEqual(main(["init", "--no-input"]), 0)
                 for path in [
                     "config/profile.json",
                     "config/sources.json",
@@ -104,6 +105,60 @@ class ConfigArtifactTests(unittest.TestCase):
                     self.assertTrue(Path(path).exists(), path)
             finally:
                 os.chdir(cwd)
+
+    def test_init_stores_onboarding_answers_in_order(self):
+        prompts = []
+
+        def fake_input(prompt):
+            prompts.append(prompt)
+            if "environment" in prompt:
+                return "Remote AI startups"
+            return "Founding Product Lead"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=fake_input):
+                    self.assertEqual(main(["init"]), 0)
+                profile = json.loads(Path("config/profile.json").read_text(encoding="utf-8"))
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(
+            prompts,
+            [
+                "What is the right environment for you? ",
+                "What is the right role for you? ",
+            ],
+        )
+        self.assertEqual(profile["environment_preferences"], ["Remote AI startups"])
+        self.assertEqual(profile["role_preferences"], ["Founding Product Lead"])
+        self.assertEqual(profile["target_roles"][0], "Founding Product Lead")
+
+    def test_init_accepts_non_interactive_onboarding_answers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                self.assertEqual(
+                    main(
+                        [
+                            "init",
+                            "--environment",
+                            "Seed-stage marketplaces",
+                            "--role",
+                            "Growth Lead",
+                        ]
+                    ),
+                    0,
+                )
+                profile = json.loads(Path("config/profile.json").read_text(encoding="utf-8"))
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(profile["environment_preferences"], ["Seed-stage marketplaces"])
+        self.assertEqual(profile["role_preferences"], ["Growth Lead"])
 
     def test_standalone_profile_is_preferred_over_legacy_embedded_profile(self):
         with tempfile.TemporaryDirectory() as tmpdir:

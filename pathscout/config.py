@@ -54,6 +54,19 @@ def load_config(path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
     return load_json(path)
 
 
+def apply_onboarding_answers(profile_path: Path, environment: str, role: str) -> None:
+    profile = load_json(profile_path)
+    if environment:
+        profile["environment_preferences"] = [environment]
+    if role:
+        profile["role_preferences"] = [role]
+        target_roles = profile.setdefault("target_roles", [])
+        normalized_roles = {str(value).strip().lower() for value in target_roles}
+        if role.strip().lower() not in normalized_roles:
+            target_roles.insert(0, role)
+    profile_path.write_text(json.dumps(profile, indent=2) + "\n", encoding="utf-8")
+
+
 def load_profile(profile_path: Path, sources_config: dict[str, Any] | None = None) -> dict[str, Any]:
     if profile_path.exists():
         profile = load_json(profile_path)

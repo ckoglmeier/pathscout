@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import warnings
 from datetime import date
 from pathlib import Path
@@ -13,6 +14,7 @@ from .config import (
     DEFAULT_SOURCES,
     DEFAULT_SUPPRESSIONS,
     DEFAULT_WATCHLIST,
+    apply_onboarding_answers,
     build_runtime_config,
     ensure_default_files,
 )
@@ -33,6 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser("init", help="Create sample config and local folders.")
     add_config_paths(init_parser)
+    init_parser.add_argument("--environment", help="Answer for: What is the right environment for you?")
+    init_parser.add_argument("--role", help="Answer for: What is the right role for you?")
+    init_parser.add_argument("--no-input", action="store_true", help="Create defaults without interactive onboarding prompts.")
 
     run_parser = subparsers.add_parser("run", help="Fetch sources, score observations, and write artifacts.")
     add_config_paths(run_parser)
@@ -79,18 +84,34 @@ def add_config_paths(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--suppressions", default=str(DEFAULT_SUPPRESSIONS), help="Path to suppressions JSON.")
 
 
+def collect_onboarding_answers(environment: str | None, role: str | None, no_input: bool) -> tuple[str, str]:
+    if no_input:
+        return environment or "", role or ""
+    if environment is not None and role is not None:
+        return environment.strip(), role.strip()
+    if not sys.stdin.isatty():
+        return environment or "", role or ""
+    resolved_environment = environment.strip() if environment is not None else input("What is the right environment for you? ").strip()
+    resolved_role = role.strip() if role is not None else input("What is the right role for you? ").strip()
+    return resolved_environment, resolved_role
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.command == "init":
+        profile_path = Path(args.profile)
         ensure_default_files(
-            Path(args.profile),
+            profile_path,
             Path(args.sources),
             Path(args.watchlist),
             Path(args.suppressions),
             DEFAULT_PORTFOLIO,
         )
+        environment, role = collect_onboarding_answers(args.environment, args.role, args.no_input)
+        if environment or role:
+            apply_onboarding_answers(profile_path, environment, role)
         print(f"Initialized PathScout config in {Path(args.sources).parent}")
         return 0
 

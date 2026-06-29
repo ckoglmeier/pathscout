@@ -46,6 +46,21 @@ pathscout doctor
 pathscout run --format both
 ```
 
+During `init`, PathScout asks two onboarding questions in this order:
+
+1. What is the right environment for you?
+2. What is the right role for you?
+
+For scripted setup, pass answers directly:
+
+```bash
+pathscout init \
+  --environment "Remote AI startups" \
+  --role "Founding Product Lead"
+```
+
+Use `--no-input` to create default sample config without prompts.
+
 Outputs:
 
 - `data/pathscout.sqlite`: local state and dedupe history.
