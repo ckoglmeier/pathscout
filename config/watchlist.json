@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "methodology": "Fictional sample watchlist for fit-based startup role discovery.",
+  "companies": [
+    {
+      "name": "Northstar Robotics",
+      "status": "strong",
+      "stage": "Series B",
+      "domains": ["robotics", "logistics"],
+      "location": "Remote",
+      "watch_reason": "Scaling field deployments and likely to need business-line leadership.",
+      "signals_to_watch": ["new GM role", "customer deployment expansion"],
+      "urls": {
+        "homepage": "https://example.com/northstar"
+      }
+    },
+    {
+      "name": "Atlas Foundry",
+      "status": "watch",
+      "stage": "Series A",
+      "domains": ["industrial automation", "manufacturing"],
+      "location": "Denver",
+      "watch_reason": "Early commercialization signal in a complex physical-world market.",
+      "signals_to_watch": ["commercial leadership hire", "factory launch"],
+      "urls": {
+        "homepage": "https://example.com/atlas"
+      }
+    },
+    {
+      "name": "Vector Market",
+      "status": "watch",
+      "stage": "Series C",
+      "domains": ["ai", "marketplace"],
+      "location": "Remote",
+      "watch_reason": "Marketplace with possible hiring need as enterprise adoption grows.",
+      "signals_to_watch": ["new vertical", "P&L owner"],
+      "urls": {
+        "homepage": "https://example.com/vector"
+      }
+    }
+  ]
+}

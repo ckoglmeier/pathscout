@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "company_watchlist",
+      "type": "watchlist",
+      "name": "Company watchlist",
+      "enabled": true,
+      "config": {
+        "path": "config/watchlist.json"
+      }
+    },
+    {
+      "id": "watchlist_careers",
+      "type": "watchlist_careers",
+      "name": "Watchlist careers pages",
+      "enabled": true,
+      "config": {
+        "path": "config/watchlist.json",
+        "timeout_seconds": 3,
+        "candidate_paths": ["careers", "jobs"],
+        "max_elapsed_seconds": 300
+      }
+    },
+    {
+      "id": "portfolio",
+      "type": "portfolio",
+      "name": "Portfolio relationship signals",
+      "enabled": true,
+      "config": {
+        "path": "config/portfolio.json"
+      }
+    },
+    {
+      "id": "manual_seed_notes",
+      "type": "manual",
+      "name": "Manual seed notes",
+      "enabled": true,
+      "config": {
+        "items": []
+      }
+    }
+  ]
+}

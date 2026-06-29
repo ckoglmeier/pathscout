@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "notes": "Source catalog for expanding PathScout beyond the seed company watchlist. These are monitoring targets, not all active fetch sources yet.",
+  "vc_portfolios": [
+    {"name": "Eclipse", "url": "https://www.eclipse.vc/portfolio", "why": "Industrial, robotics, manufacturing, physical-world startups."},
+    {"name": "Lux Capital", "url": "https://www.luxcapital.com/companies", "why": "Deep tech, defense, AI, robotics, manufacturing."},
+    {"name": "DCVC", "url": "https://www.dcvc.com/companies", "why": "Deep tech, physical AI, robotics, industrial systems."},
+    {"name": "Khosla Ventures", "url": "https://www.khoslaventures.com/portfolio/", "why": "AI, autonomy, robotics, climate/industrial technology."},
+    {"name": "Andreessen Horowitz", "url": "https://a16z.com/portfolio/", "why": "AI, defense, marketplaces, enterprise applications."},
+    {"name": "Founders Fund", "url": "https://foundersfund.com/portfolio/", "why": "Defense, frontier tech, hard-tech companies."},
+    {"name": "General Catalyst", "url": "https://www.generalcatalyst.com/portfolio", "why": "AI-native applications, marketplaces, later-stage venture."},
+    {"name": "Sequoia", "url": "https://www.sequoiacap.com/companies/", "why": "AI, robotics, defense, category-defining companies."},
+    {"name": "Benchmark", "url": "https://www.benchmark.com/companies/", "why": "AI and marketplace companies with high-quality founders."},
+    {"name": "Thrive Capital", "url": "https://thrivecap.com/companies", "why": "AI leaders and late-stage breakout companies."},
+    {"name": "Radical Ventures", "url": "https://radical.vc/companies/", "why": "AI-first companies including robotics and enterprise AI."},
+    {"name": "Conviction", "url": "https://www.conviction.com/portfolio", "why": "AI-native applications and early-stage AI companies."},
+    {"name": "NFX", "url": "https://www.nfx.com/portfolio", "why": "Marketplaces and network-effect businesses."},
+    {"name": "8VC", "url": "https://www.8vc.com/companies", "why": "Defense, logistics, industrial, and AI infrastructure-adjacent companies."},
+    {"name": "Shield Capital", "url": "https://www.shieldcap.com/portfolio", "why": "Dual-use national security startups."},
+    {"name": "Riot Ventures", "url": "https://www.riot.vc/portfolio", "why": "Deep tech, hardware, robotics, defense."},
+    {"name": "Cantos", "url": "https://www.cantos.vc/portfolio", "why": "Climate, industrial, defense, and frontier physical-world companies."},
+    {"name": "Trucks VC", "url": "https://www.trucks.vc/portfolio", "why": "Transportation, logistics, autonomy."},
+    {"name": "UP.Partners", "url": "https://www.up.partners/portfolio", "why": "Mobility, logistics, autonomy, aerospace."},
+    {"name": "Innovation Endeavors", "url": "https://www.innovationendeavors.com/portfolio", "why": "Industrial AI, robotics, applied AI."},
+    {"name": "Construct Capital", "url": "https://constructcap.com/portfolio", "why": "Manufacturing, logistics, supply chain, hard industries."},
+    {"name": "Primary Venture Partners", "url": "https://www.primary.vc/companies", "why": "New York AI, marketplaces, enterprise applications."}
+  ],
+  "search_and_recruiting": [
+    {"name": "Daversa Partners", "url": "https://www.daversapartners.com/", "why": "Search firm signal for venture-backed technology companies."},
+    {"name": "Riviera Partners", "url": "https://www.rivierapartners.com/", "why": "Product, engineering, and leadership recruiting for VC-backed companies."},
+    {"name": "True Search", "url": "https://trueplatform.com/", "why": "Search firm with technology and venture-backed company coverage."},
+    {"name": "SPMB", "url": "https://www.spmb.com/", "why": "Search firm for technology startups and growth companies."},
+    {"name": "Bespoke Partners", "url": "https://www.bespokepartners.com/", "why": "Search firm with growth technology focus."},
+    {"name": "Acertitude", "url": "https://www.acertitude.com/", "why": "Search firm for technology and private growth companies."}
+  ],
+  "talent_boards": [
+    {"name": "a16z Jobs", "url": "https://jobs.a16z.com/jobs", "why": "Portfolio-wide roles and hidden signal for growth pain."},
+    {"name": "Sequoia Jobs", "url": "https://www.sequoiacap.com/jobs/", "why": "Portfolio job board for breakout AI companies."},
+    {"name": "General Catalyst Jobs", "url": "https://jobs.generalcatalyst.com/jobs", "why": "Portfolio-wide role monitoring."},
+    {"name": "Khosla Talent Network", "url": "https://www.khoslaventures.com/talent-network/", "why": "Portfolio talent and hiring signal."},
+    {"name": "NFX Jobs", "url": "https://www.nfx.com/jobs", "why": "Marketplace and network-effect company roles."},
+    {"name": "Wellfound", "url": "https://wellfound.com/jobs", "why": "Broad startup job coverage; useful for explicit posted roles."},
+    {"name": "Y Combinator Jobs", "url": "https://www.ycombinator.com/jobs", "why": "Early company signal and seed/Series A hidden-search candidates."}
+  ]
+}
