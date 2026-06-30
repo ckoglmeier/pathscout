@@ -12,7 +12,8 @@ DEFAULT_SOURCES = Path("config/sources.json")
 DEFAULT_WATCHLIST = Path("config/watchlist.json")
 DEFAULT_SUPPRESSIONS = Path("config/suppressions.json")
 DEFAULT_PORTFOLIO = Path("config/portfolio.json")
-DEFAULT_BACKGROUND = Path("config/background.json")
+DEFAULT_BACKGROUND = Path("config/background.local.json")
+DEFAULT_BACKGROUND_SAMPLE = Path("config/background.sample.json")
 DEFAULT_CONFIG = DEFAULT_SOURCES
 
 
@@ -29,7 +30,9 @@ def ensure_default_files(
     write_json_if_missing(watchlist_path, default_watchlist())
     write_json_if_missing(suppressions_path, default_suppressions())
     write_json_if_missing(portfolio_path, default_portfolio())
-    write_json_if_missing(background_path, default_background())
+    write_json_if_missing(DEFAULT_BACKGROUND_SAMPLE, default_background())
+    if background_path != DEFAULT_BACKGROUND:
+        write_json_if_missing(background_path, default_background())
     Path("data").mkdir(exist_ok=True)
     Path("outputs").mkdir(exist_ok=True)
 

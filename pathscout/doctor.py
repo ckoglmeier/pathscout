@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from .config import SCHEMA_VERSION
+from .config import DEFAULT_BACKGROUND, DEFAULT_BACKGROUND_SAMPLE, SCHEMA_VERSION
 from .fetchers import source_setting
 from .sources import career_candidates
 from .watchlist import summarize_watchlist
@@ -31,6 +31,7 @@ def validate_setup(
     validate_schema_document(config.get("watchlist", {}), watchlist_path, "watchlist", errors)
     validate_schema_document(config.get("suppressions", {}), suppressions_path, "suppressions", errors)
     if background_path is not None:
+        validate_local_only_boundary(background_path, warnings, errors)
         validate_optional_background(background_path, warnings, errors)
 
     if "profile" in config and sources_path and config.get("_legacy_profile"):
@@ -134,7 +135,6 @@ def validate_suppressions(suppressions: dict[str, Any], warnings: list[str], err
 
 def validate_optional_background(path: Path, warnings: list[str], errors: list[str]) -> None:
     if not path.exists():
-        warnings.append(f"missing optional background file: {path}")
         return
     try:
         import json
@@ -150,6 +150,30 @@ def validate_optional_background(path: Path, warnings: list[str], errors: list[s
     for field in ["strengths", "proof_points", "best_environments", "avoid_environments", "constraints", "network_context"]:
         if field in background and not isinstance(background[field], list):
             errors.append(f"background {field} must be a list")
+
+
+def validate_local_only_boundary(background_path: Path | None, warnings: list[str], errors: list[str]) -> None:
+    if not DEFAULT_BACKGROUND_SAMPLE.exists():
+        errors.append(f"missing tracked background sample: {DEFAULT_BACKGROUND_SAMPLE}")
+
+    if background_path and background_path == Path("config/background.json"):
+        warnings.append("config/background.json is deprecated for private context; use config/background.local.json")
+
+    if Path("config/background.json").exists():
+        warnings.append("legacy private background file exists at config/background.json; migrate to config/background.local.json")
+
+    gitignore = Path(".gitignore")
+    if not gitignore.exists():
+        warnings.append(".gitignore is missing; private local files may be committed accidentally")
+        return
+
+    ignored_paths = {
+        line.strip()
+        for line in gitignore.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+    if str(DEFAULT_BACKGROUND) not in ignored_paths:
+        errors.append(f".gitignore must ignore {DEFAULT_BACKGROUND}")
 
 
 def format_doctor_report(

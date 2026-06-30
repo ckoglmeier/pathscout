@@ -1,12 +1,12 @@
 # PathScout
 
-PathScout is a local-first role discovery CLI for finding high-fit startup opportunities before they become obvious job posts.
+PathScout is a local-only role discovery CLI for finding high-fit startup opportunities before they become obvious job posts.
 
 It fetches broad signals, scores them against a personal fit profile, stores deduped observations in SQLite, and emits a canonical JSON artifact plus a readable Markdown digest.
 
 ## What PathScout Is
 
-- A local CLI for monitoring companies, careers pages, RSS feeds, portfolio lists, and manual notes.
+- A local-only CLI for monitoring companies, careers pages, RSS feeds, portfolio lists, and manual notes.
 - A fit-profile engine for surfacing target roles, hidden-search hypotheses, and weaker watch signals.
 - An explainable findings scanner: every surfaced item includes score, tier, reasons, flags, source metadata, and suppression state.
 
@@ -15,7 +15,7 @@ It fetches broad signals, scores them against a personal fit profile, stores ded
 - It is not a hosted marketplace.
 - It is not a recruiting CRM.
 - It is not a general-purpose job board scraper.
-- It does not send your profile, watchlist, or findings anywhere by default.
+- It does not provide hosted storage, sync, or remote persistence.
 
 ## Install
 
@@ -41,10 +41,13 @@ python3 -m pathscout run --dry-run --format both
 ## Quick Start
 
 ```bash
+pathscout start
 pathscout init
 pathscout doctor
 pathscout run --format both
 ```
+
+`pathscout start` is a read-only startup checklist. It shows what exists, what is missing, and the next recommended command without creating or editing files.
 
 During `init`, PathScout asks two onboarding questions in this order:
 
@@ -68,7 +71,8 @@ Outputs:
 - `outputs/latest.md`: human-readable digest rendered from the JSON findings.
 - `outputs/packages/`: optional portable opportunity packages created from findings.
 - `config/profile.json`: personal fit profile.
-- `config/background.json`: private candidate context and proof points.
+- `config/background.sample.json`: tracked example candidate context.
+- `config/background.local.json`: private candidate context and proof points.
 - `config/sources.json`: source adapter configuration.
 - `config/watchlist.json`: curated company list.
 - `config/suppressions.json`: structured ignored findings.
@@ -130,6 +134,7 @@ The v0.2 runner supports standard-library fetches for:
 ## Commands
 
 ```bash
+pathscout start
 pathscout init
 pathscout doctor
 pathscout watchlist
@@ -187,13 +192,13 @@ pathscout notes <finding-id> --add "Ask a former employee whether this team is s
 pathscout notes --company "Northstar Robotics"
 ```
 
-Use `thesis` to generate a local role-thesis package from a finding:
+Use `thesis` to generate a local role-thesis package from a finding. Copy `config/background.sample.json` to `config/background.local.json` first if you want the thesis to include private candidate context:
 
 ```bash
 pathscout thesis <finding-id>
 ```
 
-Thesis packages are written to `outputs/theses/` and are generated from the same JSON finding objects used by review and Markdown digests. They are role-thesis drafts, not generated job descriptions.
+Thesis packages are written to `outputs/theses/` and are generated from the same JSON finding objects used by review and Markdown digests. They include the company moment, problem map, proposed function, fit argument, 90-180 day wedge, notes, and evidence gaps. They are thinking artifacts, not generated job descriptions or send-ready outreach.
 
 Use `suppress` to hide a finding from later Markdown digests while keeping the raw observation in SQLite and the finding marked in JSON:
 
@@ -213,7 +218,9 @@ pathscout package <finding-id>
 
 Each package includes a manifest, a human Markdown brief, agent instructions, and canonical JSON data under `outputs/packages/`. See `docs/artifacts.md` for the artifact contract.
 
-`config/background.json`, `data/notes.json`, `outputs/theses/`, and `outputs/packages/` are ignored by default because they may contain private candidate context.
+`config/background.local.json`, legacy `config/background.json`, `data/notes.json`, `outputs/theses/`, and `outputs/packages/` are ignored by default because they may contain private candidate context.
+
+See `DATA_CONTRACT.md` and `docs/source_of_truth.md` for the local-only storage boundary and agent-readable artifact contract. Network source fetches collect evidence for local runs; they are not hosted storage or sync.
 
 ## Design Borrowed From
 

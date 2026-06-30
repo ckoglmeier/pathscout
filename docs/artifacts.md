@@ -23,6 +23,14 @@ Findings include stable IDs, company/title/source metadata, tier, score, reasons
 
 `outputs/latest.md` is the human-readable digest rendered from the same findings.
 
+## Role Theses
+
+`pathscout thesis <finding-id>` creates a local Markdown role thesis under `outputs/theses/`.
+
+A role thesis is a candidate-owned thinking artifact. It combines one finding with the local profile, optional private background context, and local notes. It should explain the company moment, problem map, proposed function, fit argument, 90-180 day wedge, source metadata, and evidence gaps.
+
+Role theses are not canonical run artifacts. They are also not generated job descriptions, polished outreach, or hosted sharing objects.
+
 ## Opportunity Packages
 
 An opportunity package answers: what should a human or agent understand about this specific opportunity signal?

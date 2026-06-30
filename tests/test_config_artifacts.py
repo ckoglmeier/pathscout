@@ -15,6 +15,7 @@ from pathscout.config import build_runtime_config, ensure_default_files, load_pr
 from pathscout.db import init_db
 from pathscout.doctor import validate_setup
 from pathscout.runner import run_sources
+from pathscout.workflow import render_thesis
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -89,6 +90,76 @@ def watchlist_config() -> dict:
 
 
 class ConfigArtifactTests(unittest.TestCase):
+    def test_start_prints_read_only_startup_sequence_before_init(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                output = StringIO()
+                with redirect_stdout(output):
+                    rc = main(["start"])
+                text = output.getvalue()
+                self.assertFalse(Path("config").exists())
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(rc, 0)
+        self.assertIn("PathScout startup", text)
+        self.assertIn("Initialize local config: needs action", text)
+        self.assertIn("Next step: Run `pathscout init` to create config files.", text)
+        self.assertIn("First-run sequence:", text)
+        self.assertIn("pathscout thesis <finding-id>", text)
+        self.assertIn("Network source fetches collect evidence; they are not hosted storage or sync.", text)
+
+    def test_start_marks_existing_setup_and_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                write_json(Path("config/profile.json"), {**profile_config(), "environment_preferences": ["Remote"], "role_preferences": ["Product Lead"]})
+                write_json(Path("config/sources.json"), sources_config())
+                write_json(Path("config/watchlist.json"), watchlist_config())
+                write_json(Path("config/suppressions.json"), {"schema_version": 1, "suppressions": []})
+                write_json(Path("config/background.sample.json"), {"schema_version": 1})
+                Path(".gitignore").write_text("config/background.local.json\n", encoding="utf-8")
+                write_json(
+                    Path("outputs/latest.json"),
+                    {
+                        "schema_version": 1,
+                        "findings": [
+                            {
+                                "id": "abcdef123456",
+                                "company": "Test Robotics",
+                                "title": "Product Lead",
+                                "tier": "Act Now",
+                                "score": 80,
+                                "reasons": [],
+                                "flags": [],
+                                "suppressed": False,
+                            }
+                        ],
+                    },
+                )
+                write_json(Path("data/notes.json"), {"schema_version": 1, "notes": [{"id": "note_1", "body": "Warm intro", "company": "Test Robotics"}]})
+                Path("outputs/theses").mkdir(parents=True)
+                Path("outputs/theses/test.md").write_text("# Thesis\n", encoding="utf-8")
+                output = StringIO()
+                with redirect_stdout(output):
+                    rc = main(["start"])
+                text = output.getvalue()
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(rc, 0)
+        self.assertIn("Initialize local config: done", text)
+        self.assertIn("Answer environment and role: done", text)
+        self.assertIn("Review watchlist: done", text)
+        self.assertIn("Validate setup: done", text)
+        self.assertIn("Review findings: ready", text)
+        self.assertIn("Add local judgment: done", text)
+        self.assertIn("Draft first role thesis: done", text)
+        self.assertIn("Add private background: optional, not found", text)
+
     def test_init_creates_expected_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cwd = os.getcwd()
@@ -97,13 +168,14 @@ class ConfigArtifactTests(unittest.TestCase):
                 self.assertEqual(main(["init", "--no-input"]), 0)
                 for path in [
                     "config/profile.json",
-                    "config/background.json",
+                    "config/background.sample.json",
                     "config/sources.json",
                     "config/watchlist.json",
                     "config/suppressions.json",
                     "config/portfolio.json",
                 ]:
                     self.assertTrue(Path(path).exists(), path)
+                self.assertFalse(Path("config/background.local.json").exists())
             finally:
                 os.chdir(cwd)
 
@@ -202,6 +274,55 @@ class ConfigArtifactTests(unittest.TestCase):
         warnings_found, errors = validate_setup(config, Path("config/watchlist.json"), sources_path=Path("config/sources.json"))
         self.assertTrue(any("duplicate source id" in error for error in errors))
         self.assertTrue(any("legacy config shape" in warning for warning in warnings_found))
+
+    def test_doctor_validates_local_only_background_when_present(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                Path("config").mkdir()
+                Path(".gitignore").write_text("config/background.local.json\n", encoding="utf-8")
+                write_json(Path("config/background.sample.json"), {"schema_version": 1})
+                write_json(Path("config/background.local.json"), {"schema_version": 999})
+                config = sources_config()
+                config["profile"] = profile_config()
+                config["watchlist"] = watchlist_config()
+                config["suppressions"] = {"schema_version": 1, "suppressions": []}
+                _, errors = validate_setup(
+                    config,
+                    Path("config/watchlist.json"),
+                    profile_path=Path("config/profile.json"),
+                    sources_path=Path("config/sources.json"),
+                    suppressions_path=Path("config/suppressions.json"),
+                    background_path=Path("config/background.local.json"),
+                )
+            finally:
+                os.chdir(cwd)
+        self.assertTrue(any("background.local.json has unsupported" in error for error in errors))
+
+    def test_doctor_requires_private_background_gitignore_guardrail(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                Path("config").mkdir()
+                Path(".gitignore").write_text("data/*.sqlite\n", encoding="utf-8")
+                write_json(Path("config/background.sample.json"), {"schema_version": 1})
+                config = sources_config()
+                config["profile"] = profile_config()
+                config["watchlist"] = watchlist_config()
+                config["suppressions"] = {"schema_version": 1, "suppressions": []}
+                _, errors = validate_setup(
+                    config,
+                    Path("config/watchlist.json"),
+                    profile_path=Path("config/profile.json"),
+                    sources_path=Path("config/sources.json"),
+                    suppressions_path=Path("config/suppressions.json"),
+                    background_path=Path("config/background.local.json"),
+                )
+            finally:
+                os.chdir(cwd)
+        self.assertTrue(any(".gitignore must ignore config/background.local.json" in error for error in errors))
 
     def test_suppressed_findings_appear_in_json_and_group_in_markdown(self):
         conn = sqlite3.connect(":memory:")
@@ -480,6 +601,94 @@ class ConfigArtifactTests(unittest.TestCase):
         self.assertIn("## Evidence To Verify", thesis)
         self.assertIn("Verify deployment expansion.", thesis)
         self.assertNotIn("## Job Description", thesis)
+
+    def test_thesis_renders_grounded_role_thesis_sections(self):
+        thesis = render_thesis(
+            {
+                "id": "abcdef123456",
+                "content_hash": "hash123",
+                "tier": "Hidden Search Hypothesis",
+                "score": 76,
+                "company": "Test Robotics",
+                "title": "Strong watchlist company",
+                "url": "https://example.com",
+                "source_type": "watchlist",
+                "evidence_type": "hidden_search",
+                "evidence_strength": "medium",
+                "evidence_warnings": [],
+                "observed_at": "2026-06-29T12:00:00+00:00",
+                "reasons": ["hidden-search company signal: series b", "domain fit: robotics"],
+                "flags": [],
+                "text": "Series B robotics company scaling customer deployments and commercial motion.",
+            },
+            {
+                **profile_config(),
+                "environment_preferences": ["Seed-stage robotics with founder access"],
+                "role_preferences": ["Product and Commercialization Lead"],
+            },
+            {
+                "schema_version": 1,
+                "summary": "Product and operations lead.",
+                "strengths": ["Turns ambiguous deployment problems into operating plans."],
+                "proof_points": ["Launched a product motion with first customer deployments."],
+                "best_environments": ["Early-stage teams with high ambiguity."],
+                "avoid_environments": [],
+                "constraints": ["Remote-first with clear travel expectations."],
+                "network_context": [],
+            },
+            [
+                {
+                    "id": "note_1",
+                    "finding_id": "abcdef123456",
+                    "company": "",
+                    "body": "Check warm intro path through former customer.",
+                    "created_at": "2026-06-29T12:01:00+00:00",
+                }
+            ],
+        )
+
+        self.assertIn("## Company Moment", thesis)
+        self.assertIn("## Problem Map", thesis)
+        self.assertIn("Turning pilots or deployments", thesis)
+        self.assertIn("Primary function thesis: Product and Commercialization Lead.", thesis)
+        self.assertIn("Background summary: Product and operations lead.", thesis)
+        self.assertIn("Stated target environment: Seed-stage robotics with founder access", thesis)
+        self.assertIn("Content hash: hash123", thesis)
+        self.assertIn("Check warm intro path through former customer.", thesis)
+        self.assertNotIn("## Job Description", thesis)
+        self.assertNotIn("## Outreach Draft", thesis)
+        self.assertNotIn("marketplace intro", thesis.lower())
+        self.assertNotIn("recruiter", thesis.lower())
+
+    def test_thesis_marks_missing_background_and_weak_evidence_as_gaps(self):
+        thesis = render_thesis(
+            {
+                "id": "abcdef123456",
+                "content_hash": "hash123",
+                "tier": "Watch Signal",
+                "score": 44,
+                "company": "Fallback Robotics",
+                "title": "Fallback Robotics careers",
+                "url": "",
+                "source_type": "watchlist_careers",
+                "evidence_type": "job",
+                "evidence_strength": "weak",
+                "evidence_warnings": ["page_level_fallback"],
+                "observed_at": "2026-06-29T12:00:00+00:00",
+                "reasons": [],
+                "flags": [],
+                "text": "Careers open roles product commercial.",
+            },
+            profile_config(),
+            {},
+            [],
+        )
+
+        self.assertIn("Verify the source signal before treating this as actionable.", thesis)
+        self.assertIn("Check warning: page_level_fallback.", thesis)
+        self.assertIn("Add candidate background and proof points before sharing externally.", thesis)
+        self.assertIn("Add local judgment or a warm-path note before using this outside PathScout.", thesis)
+        self.assertIn("Candidate background and proof points are added in config/background.local.json.", thesis)
 
     def test_package_command_writes_human_and_agent_readable_export(self):
         with tempfile.TemporaryDirectory() as tmpdir:

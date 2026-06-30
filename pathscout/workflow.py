@@ -166,10 +166,6 @@ def render_thesis(
 ) -> str:
     company = finding.get("company") or "Unknown company"
     title = finding.get("title") or "Untitled signal"
-    target_roles = profile.get("role_preferences") or profile.get("target_roles", [])
-    strengths = background.get("strengths", [])
-    proof_points = background.get("proof_points", [])
-    best_environments = background.get("best_environments", [])
     lines = [
         f"# Role Thesis: {company}",
         "",
@@ -178,58 +174,168 @@ def render_thesis(
     ]
     if finding.get("url"):
         lines.append(f"Source: {finding['url']}")
+    if finding.get("observed_at"):
+        lines.append(f"Observed: {finding['observed_at']}")
+    if finding.get("content_hash"):
+        lines.append(f"Content hash: {finding['content_hash']}")
     lines.extend(
         [
             "",
             "## Company Moment",
             "",
-            bullets_or_placeholder(finding.get("reasons", [])[:5], "Add 3-5 bullets explaining why this company may be entering an interesting moment."),
+            bullets_or_placeholder(company_moment_from_finding(finding), "Add 3-5 bullets explaining why this company may be entering an interesting moment."),
             "",
             "## Why It Surfaced",
             "",
             bullets_or_placeholder(finding.get("reasons", [])[:8], "Add the concrete PathScout signals that justify more research."),
             "",
-            "## Problem Hypotheses",
+            "## Problem Map",
             "",
-            "- Hypothesis 1: [What problem may become expensive for this company soon?]",
-            "- Hypothesis 2: [What operating gap might this company need to fill?]",
-            "- Hypothesis 3: [What stage-specific constraint should be tested?]",
+            bullets_or_placeholder(problem_hypotheses_from_signals(finding, profile, notes), "Add likely company problems only after reviewing evidence."),
             "",
             "## Proposed Function",
             "",
-            f"- Starting point: {', '.join(target_roles[:3]) if target_roles else '[Add the function you believe you should own.]'}",
-            "- Do not turn this into a generic job description in this release.",
+            bullets_or_placeholder(proposed_function_from_profile(profile, finding), "Add the function you believe you should own."),
             "",
-            "## Fit Evidence",
+            "## Fit Argument",
             "",
-            f"- Background summary: {background.get('summary', '[Add a concise background summary before sharing.]')}",
-            bullets_or_placeholder(strengths[:5], "Add strengths that map to this company's likely needs."),
-            bullets_or_placeholder(proof_points[:5], "Add proof points before using this thesis externally."),
+            bullets_or_placeholder(fit_claims_from_background(profile, background, finding), "Add private background and proof points before sharing externally."),
             "",
             "## Environment Fit",
             "",
-            bullets_or_placeholder(best_environments[:5], "Add environments where you have done your best work."),
+            bullets_or_placeholder(environment_fit_from_profile(profile, background, finding), "Add environments where you have done your best work."),
             "",
-            "## 90-180 Day Questions",
+            "## 90-180 Day Wedge",
             "",
-            "- What would I diagnose first?",
-            "- What would I try to make true by day 90?",
-            "- What proof would show the role is working by day 180?",
+            bullets_or_placeholder(wedge_questions_from_context(finding, profile, background), "Add a first-pass 90-180 day wedge after reviewing the company moment."),
             "",
             "## Evidence To Verify",
             "",
-            evidence_verification_list(finding, background),
+            evidence_verification_list(finding, background, notes),
             "",
             "## Notes",
             "",
             bullets_or_placeholder([note.get("body", "") for note in notes], "Add local notes, warm paths, and concerns before outreach."),
             "",
-            "## Outreach Draft Placeholder",
+            "## Not Ready To Send Until",
             "",
-            "[Draft later only after evidence gaps are checked.]",
+            bullets_or_placeholder(not_ready_to_send_until(finding, background, notes), "Review evidence gaps before using this thesis externally."),
         ]
     )
     return "\n".join(lines) + "\n"
+
+
+def company_moment_from_finding(finding: dict[str, Any]) -> list[str]:
+    reasons = [str(reason) for reason in finding.get("reasons", []) if str(reason).strip()]
+    items: list[str] = []
+    for reason in reasons:
+        lowered = reason.lower()
+        if any(term in lowered for term in ["hidden-search", "watchlist", "portfolio", "domain fit", "stage", "series", "funding"]):
+            items.append(f"Signal: {reason}")
+    snippet = evidence_snippet(finding, width=220)
+    if snippet:
+        items.append(f"Observed evidence: {snippet}")
+    if finding.get("evidence_strength"):
+        items.append(f"Confidence starts at {finding.get('evidence_strength')} based on current source quality.")
+    return dedupe_preserve_order(items)[:5]
+
+
+def problem_hypotheses_from_signals(
+    finding: dict[str, Any],
+    profile: dict[str, Any],
+    notes: list[dict[str, Any]],
+) -> list[str]:
+    signal_text = thesis_signal_text(finding, profile, notes)
+    hypotheses: list[str] = []
+    if any(term in signal_text for term in ["pilot", "deployment", "implementation", "customer rollout", "robotics", "autonomy"]):
+        hypotheses.append("Turning pilots or deployments into a repeatable customer operating motion may become expensive soon.")
+    if any(term in signal_text for term in ["gtm", "sales", "commercial", "revenue", "growth", "market"]):
+        hypotheses.append("Moving from founder-led commercial work to a repeatable GTM system may be the next constraint.")
+    if any(term in signal_text for term in ["product", "roadmap", "customer pain", "workflow", "platform"]):
+        hypotheses.append("Translating customer pain into product priorities may need clearer cross-functional ownership.")
+    if any(term in signal_text for term in ["community", "network", "marketplace", "liquidity", "operators"]):
+        hypotheses.append("Strengthening network quality, liquidity, or community loops may be part of the role shape.")
+    if any(term in signal_text for term in ["series a", "series b", "series c", "funding", "raised"]):
+        hypotheses.append("A stage change may require operating cadence, hiring focus, and clearer functional ownership.")
+    if not hypotheses and finding.get("tier") == "Act Now":
+        hypotheses.append("The posted role should be inspected for the underlying business problem, not just the title.")
+    return dedupe_preserve_order(hypotheses)[:4]
+
+
+def proposed_function_from_profile(profile: dict[str, Any], finding: dict[str, Any]) -> list[str]:
+    target_roles = clean_list(profile.get("role_preferences") or profile.get("target_roles", []))
+    title = str(finding.get("title", "")).strip()
+    items: list[str] = []
+    if target_roles:
+        items.append(f"Primary function thesis: {target_roles[0]}.")
+    if len(target_roles) > 1:
+        items.append(f"Adjacent titles to test: {', '.join(target_roles[1:4])}.")
+    if title and not title.lower().endswith("careers"):
+        items.append(f"Compare this against the observed signal: {title}.")
+    items.append("Do not pitch this as a generic job description; keep it framed as a role thesis to validate.")
+    return items
+
+
+def fit_claims_from_background(
+    profile: dict[str, Any],
+    background: dict[str, Any],
+    finding: dict[str, Any],
+) -> list[str]:
+    if not background:
+        return []
+    items: list[str] = []
+    summary = str(background.get("summary", "")).strip()
+    if summary:
+        items.append(f"Background summary: {summary}")
+    for strength in clean_list(background.get("strengths", []))[:4]:
+        items.append(f"Strength to test against this company moment: {strength}")
+    for proof in clean_list(background.get("proof_points", []))[:4]:
+        items.append(f"Proof point to use only if relevant: {proof}")
+    role_preferences = clean_list(profile.get("role_preferences") or profile.get("target_roles", []))
+    if role_preferences:
+        items.append(f"Function fit starts from the user's stated role preference: {role_preferences[0]}.")
+    if finding.get("evidence_strength") != "strong":
+        items.append("Fit should be treated as provisional until the company need is verified.")
+    return items
+
+
+def environment_fit_from_profile(
+    profile: dict[str, Any],
+    background: dict[str, Any],
+    finding: dict[str, Any],
+) -> list[str]:
+    items: list[str] = []
+    for environment in clean_list(profile.get("environment_preferences", []))[:3]:
+        items.append(f"Stated target environment: {environment}")
+    for environment in clean_list(background.get("best_environments", []))[:3]:
+        items.append(f"Best-work environment: {environment}")
+    stages = clean_list(profile.get("stage_focus", []))
+    if stages:
+        items.append(f"Stage preference to compare against company evidence: {', '.join(stages[:4])}.")
+    constraints = clean_list(background.get("constraints", [])) or clean_list([profile.get("travel_limit", "")])
+    for constraint in constraints[:3]:
+        items.append(f"Constraint to verify: {constraint}")
+    if finding.get("tier") == "Hidden Search Hypothesis":
+        items.append("Because this may be unposted, validate manager, ambiguity, authority, and operating pace before pitching.")
+    return items
+
+
+def wedge_questions_from_context(
+    finding: dict[str, Any],
+    profile: dict[str, Any],
+    background: dict[str, Any],
+) -> list[str]:
+    role = first_clean(profile.get("role_preferences") or profile.get("target_roles", []), "the proposed function")
+    company = finding.get("company") or "the company"
+    items = [
+        f"First diagnosis: what constraint is most limiting {company} right now, and does it map to {role}?",
+        "First 90 days: identify one operating or product motion that could become repeatable.",
+        "By 180 days: define the proof that the role is creating leverage, not just adding activity.",
+    ]
+    proof = first_clean(background.get("proof_points", []), "")
+    if proof:
+        items.append(f"Use this proof point as a comparison case only if the company problem is similar: {proof}")
+    return items
 
 
 def write_thesis(
@@ -254,7 +360,7 @@ def bullets_or_placeholder(items: list[Any], placeholder: str) -> str:
     return "\n".join(f"- {item}" for item in cleaned)
 
 
-def evidence_verification_list(finding: dict[str, Any], background: dict[str, Any]) -> str:
+def evidence_verification_list(finding: dict[str, Any], background: dict[str, Any], notes: list[dict[str, Any]] | None = None) -> str:
     items = []
     if finding.get("evidence_strength") == "weak":
         items.append("Verify the source signal before treating this as actionable.")
@@ -262,11 +368,70 @@ def evidence_verification_list(finding: dict[str, Any], background: dict[str, An
         items.append(f"Check warning: {warning}.")
     if not background:
         items.append("Add candidate background and proof points before sharing externally.")
+    if not notes:
+        items.append("Add local judgment or a warm-path note before using this outside PathScout.")
     if not finding.get("url"):
         items.append("Find a source URL or relationship path that supports the thesis.")
     if not items:
         items.append("Confirm the company moment and role need with a human source before outreach.")
     return "\n".join(f"- {item}" for item in items)
+
+
+def not_ready_to_send_until(
+    finding: dict[str, Any],
+    background: dict[str, Any],
+    notes: list[dict[str, Any]],
+) -> list[str]:
+    items: list[str] = []
+    if finding.get("evidence_strength") != "strong":
+        items.append("The source signal is verified beyond the current evidence strength.")
+    if not background:
+        items.append("Candidate background and proof points are added in config/background.local.json.")
+    if not notes:
+        items.append("A human note, warm path, or concern has been captured locally.")
+    if finding.get("tier") == "Hidden Search Hypothesis":
+        items.append("The company need is validated with a human source or stronger public signal.")
+    if not items:
+        items.append("A reviewer has checked the thesis for overclaiming and missing evidence.")
+    return items
+
+
+def thesis_signal_text(finding: dict[str, Any], profile: dict[str, Any], notes: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for value in [finding.get("title", ""), finding.get("tier", ""), finding.get("text", "")]:
+        parts.append(str(value))
+    parts.extend(str(reason) for reason in finding.get("reasons", []))
+    parts.extend(str(flag) for flag in finding.get("flags", []))
+    parts.extend(str(note.get("body", "")) for note in notes)
+    return " ".join(parts).lower()
+
+
+def evidence_snippet(finding: dict[str, Any], width: int = 220) -> str:
+    text = " ".join(str(finding.get("text", "")).split())
+    if not text:
+        return ""
+    return textwrap.shorten(text, width=width, placeholder="...")
+
+
+def clean_list(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [str(value).strip() for value in values if str(value).strip()]
+
+
+def first_clean(values: Any, fallback: str) -> str:
+    cleaned = clean_list(values)
+    return cleaned[0] if cleaned else fallback
+
+
+def dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
 
 
 def fit_summary(reasons: list[str], kind: str) -> str:

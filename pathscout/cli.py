@@ -43,11 +43,20 @@ DEFAULT_DB = Path("data/pathscout.sqlite")
 DEFAULT_JSON_OUT = Path("outputs/latest.json")
 DEFAULT_MD_OUT = Path("outputs/latest.md")
 DEFAULT_PACKAGE_OUT = Path("outputs/packages")
+DEFAULT_BACKGROUND_SAMPLE = Path("config/background.sample.json")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="PathScout role discovery radar.")
     subparsers = parser.add_subparsers(dest="command")
+
+    start_parser = subparsers.add_parser("start", help="Show the first-run startup checklist.")
+    add_config_paths(start_parser)
+    start_parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Path to private background JSON.")
+    start_parser.add_argument("--db", default=str(DEFAULT_DB), help="Path to SQLite DB.")
+    start_parser.add_argument("--json", dest="json_path", default=str(DEFAULT_JSON_OUT), help="Path to JSON artifact.")
+    start_parser.add_argument("--notes", default=str(DEFAULT_NOTES), help="Path to notes JSON.")
+    start_parser.add_argument("--theses-dir", default=str(DEFAULT_THESES_DIR), help="Directory for generated thesis files.")
 
     init_parser = subparsers.add_parser("init", help="Create sample config and local folders.")
     add_config_paths(init_parser)
@@ -141,6 +150,20 @@ def collect_onboarding_answers(environment: str | None, role: str | None, no_inp
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "start":
+        print_startup_checklist(
+            Path(args.profile),
+            Path(args.sources),
+            Path(args.watchlist),
+            Path(args.suppressions),
+            Path(args.background),
+            Path(args.db),
+            Path(args.json_path),
+            Path(args.notes),
+            Path(args.theses_dir),
+        )
+        return 0
 
     if args.command == "init":
         profile_path = Path(args.profile)
@@ -274,6 +297,187 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.print_help()
     return 1
+
+
+def print_startup_checklist(
+    profile_path: Path,
+    sources_path: Path,
+    watchlist_path: Path,
+    suppressions_path: Path,
+    background_path: Path,
+    db_path: Path,
+    json_path: Path,
+    notes_path: Path,
+    theses_dir: Path,
+) -> None:
+    state = startup_state(
+        profile_path,
+        sources_path,
+        watchlist_path,
+        suppressions_path,
+        background_path,
+        db_path,
+        json_path,
+        notes_path,
+        theses_dir,
+    )
+    print("PathScout startup")
+    print("")
+    for index, item in enumerate(state["items"], start=1):
+        status = str(item["status"])
+        optional = " (optional)" if item.get("optional") and not status.startswith("optional") else ""
+        print(f"{index}. {item['label']}: {status}{optional}")
+        detail = item.get("detail")
+        if detail:
+            print(f"   {detail}")
+    print("")
+    print(f"Next step: {state['next_step']}")
+    print("")
+    print("First-run sequence:")
+    for command in first_run_sequence():
+        print(f"  {command}")
+    print("")
+    print("Local-only note: PathScout OSS stores state in local files. Network source fetches collect evidence; they are not hosted storage or sync.")
+
+
+def startup_state(
+    profile_path: Path,
+    sources_path: Path,
+    watchlist_path: Path,
+    suppressions_path: Path,
+    background_path: Path,
+    db_path: Path,
+    json_path: Path,
+    notes_path: Path,
+    theses_dir: Path,
+) -> dict[str, object]:
+    profile = read_json_or_empty(profile_path)
+    watchlist = read_json_or_empty(watchlist_path)
+    sources = read_json_or_empty(sources_path)
+    doctor_ready = startup_setup_valid(profile_path, sources_path, watchlist_path, suppressions_path, background_path)
+    items = [
+        checklist_item(
+            "Initialize local config",
+            all(path.exists() for path in [profile_path, sources_path, watchlist_path, suppressions_path]),
+            f"Run `pathscout init` to create config files." if not profile_path.exists() else "",
+        ),
+        checklist_item(
+            "Answer environment and role",
+            bool(profile.get("environment_preferences")) and bool(profile.get("role_preferences")),
+            "Run `pathscout init` interactively or pass `--environment` and `--role`.",
+        ),
+        checklist_item(
+            "Review watchlist",
+            bool(watchlist.get("companies")),
+            f"Edit {watchlist_path} with companies you want PathScout to monitor.",
+        ),
+        checklist_item(
+            "Review sources",
+            bool(sources.get("sources")),
+            f"Edit {sources_path} to enable watchlist, careers, RSS, web page, portfolio, or manual sources.",
+        ),
+        checklist_item(
+            "Add private background",
+            background_path.exists(),
+            f"Optional: copy {DEFAULT_BACKGROUND_SAMPLE} to {background_path} and add proof points.",
+            optional=True,
+        ),
+        checklist_item(
+            "Validate setup",
+            doctor_ready,
+            "Run `pathscout doctor` after editing config.",
+        ),
+        checklist_item(
+            "Run first scan",
+            json_path.exists() or db_path.exists(),
+            "Run `pathscout run --dry-run --format both`, then `pathscout run --format both` when ready.",
+        ),
+        checklist_item(
+            "Review findings",
+            False,
+            "Run `pathscout review` after a JSON artifact exists.",
+            ready=json_path.exists(),
+        ),
+        checklist_item(
+            "Explain one finding",
+            False,
+            "Run `pathscout explain <finding-id>` using an ID from `pathscout review`.",
+            ready=json_path.exists(),
+        ),
+        checklist_item(
+            "Add local judgment",
+            notes_path.exists(),
+            "Run `pathscout notes <finding-id> --add \"...\"` or `pathscout notes --company \"...\" --add \"...\"`.",
+        ),
+        checklist_item(
+            "Draft first role thesis",
+            theses_dir.exists() and any(theses_dir.glob("*.md")),
+            "Run `pathscout thesis <finding-id>` after reviewing and explaining a finding.",
+            ready=json_path.exists(),
+        ),
+    ]
+    return {"items": items, "next_step": next_startup_step(items)}
+
+
+def checklist_item(label: str, done: bool, detail: str, optional: bool = False, ready: bool = False) -> dict[str, object]:
+    if optional and not done:
+        status = "optional, not found"
+    elif ready and not done:
+        status = "ready"
+    else:
+        status = "done" if done else "needs action"
+    return {"label": label, "status": status, "detail": detail if not done else "", "optional": optional, "done": done}
+
+
+def next_startup_step(items: list[dict[str, object]]) -> str:
+    for item in items:
+        if item.get("optional"):
+            continue
+        if not item.get("done"):
+            detail = str(item.get("detail") or "")
+            return detail.strip("`") if detail else str(item["label"])
+    return "Run `pathscout review`, choose a finding, then run `pathscout thesis <finding-id>`."
+
+
+def first_run_sequence() -> list[str]:
+    return [
+        "pathscout init",
+        "edit config/profile.json and config/watchlist.json",
+        "optional: copy config/background.sample.json to config/background.local.json",
+        "pathscout doctor",
+        "pathscout run --dry-run --format both",
+        "pathscout run --format both",
+        "pathscout review",
+        "pathscout explain <finding-id>",
+        "pathscout notes <finding-id> --add \"...\"",
+        "pathscout thesis <finding-id>",
+    ]
+
+
+def read_json_or_empty(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def startup_setup_valid(
+    profile_path: Path,
+    sources_path: Path,
+    watchlist_path: Path,
+    suppressions_path: Path,
+    background_path: Path,
+) -> bool:
+    try:
+        config = build_runtime_config(sources_path, profile_path, watchlist_path, suppressions_path)
+        _, errors = validate_setup(config, watchlist_path, profile_path, sources_path, suppressions_path, background_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    return not errors
 
 
 def print_portfolio(path: Path) -> int:
