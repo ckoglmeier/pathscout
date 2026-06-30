@@ -51,12 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     start_parser = subparsers.add_parser("start", help="Show the first-run startup checklist.")
-    add_config_paths(start_parser)
-    start_parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Path to private background JSON.")
-    start_parser.add_argument("--db", default=str(DEFAULT_DB), help="Path to SQLite DB.")
-    start_parser.add_argument("--json", dest="json_path", default=str(DEFAULT_JSON_OUT), help="Path to JSON artifact.")
-    start_parser.add_argument("--notes", default=str(DEFAULT_NOTES), help="Path to notes JSON.")
-    start_parser.add_argument("--theses-dir", default=str(DEFAULT_THESES_DIR), help="Directory for generated thesis files.")
+    add_startup_paths(start_parser)
+
+    next_parser = subparsers.add_parser("next", aliases=["/next"], help="Show the next recommended PathScout action.")
+    add_startup_paths(next_parser)
 
     init_parser = subparsers.add_parser("init", help="Create sample config and local folders.")
     add_config_paths(init_parser)
@@ -135,6 +133,15 @@ def add_config_paths(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--suppressions", default=str(DEFAULT_SUPPRESSIONS), help="Path to suppressions JSON.")
 
 
+def add_startup_paths(parser: argparse.ArgumentParser) -> None:
+    add_config_paths(parser)
+    parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Path to private background JSON.")
+    parser.add_argument("--db", default=str(DEFAULT_DB), help="Path to SQLite DB.")
+    parser.add_argument("--json", dest="json_path", default=str(DEFAULT_JSON_OUT), help="Path to JSON artifact.")
+    parser.add_argument("--notes", default=str(DEFAULT_NOTES), help="Path to notes JSON.")
+    parser.add_argument("--theses-dir", default=str(DEFAULT_THESES_DIR), help="Directory for generated thesis files.")
+
+
 def collect_onboarding_answers(environment: str | None, role: str | None, no_input: bool) -> tuple[str, str]:
     if no_input:
         return environment or "", role or ""
@@ -153,6 +160,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "start":
         print_startup_checklist(
+            Path(args.profile),
+            Path(args.sources),
+            Path(args.watchlist),
+            Path(args.suppressions),
+            Path(args.background),
+            Path(args.db),
+            Path(args.json_path),
+            Path(args.notes),
+            Path(args.theses_dir),
+        )
+        return 0
+
+    if args.command in {"next", "/next"}:
+        print_next_action(
             Path(args.profile),
             Path(args.sources),
             Path(args.watchlist),
@@ -340,6 +361,38 @@ def print_startup_checklist(
     print("Local-only note: PathScout OSS stores state in local files. Network source fetches collect evidence; they are not hosted storage or sync.")
 
 
+def print_next_action(
+    profile_path: Path,
+    sources_path: Path,
+    watchlist_path: Path,
+    suppressions_path: Path,
+    background_path: Path,
+    db_path: Path,
+    json_path: Path,
+    notes_path: Path,
+    theses_dir: Path,
+) -> None:
+    state = startup_state(
+        profile_path,
+        sources_path,
+        watchlist_path,
+        suppressions_path,
+        background_path,
+        db_path,
+        json_path,
+        notes_path,
+        theses_dir,
+    )
+    item = next_startup_item(state["items"])
+    print("PathScout next")
+    print("")
+    print(f"Step: {item['label']}")
+    print(f"Status: {item['status']}")
+    print(f"Action: {item['detail'] or state['next_step']}")
+    print("")
+    print("Run `pathscout start` for the full checklist.")
+
+
 def startup_state(
     profile_path: Path,
     sources_path: Path,
@@ -430,13 +483,24 @@ def checklist_item(label: str, done: bool, detail: str, optional: bool = False, 
 
 
 def next_startup_step(items: list[dict[str, object]]) -> str:
+    item = next_startup_item(items)
+    detail = str(item.get("detail") or "")
+    return detail if detail else str(item["label"])
+
+
+def next_startup_item(items: list[dict[str, object]]) -> dict[str, object]:
     for item in items:
         if item.get("optional"):
             continue
         if not item.get("done"):
-            detail = str(item.get("detail") or "")
-            return detail.strip("`") if detail else str(item["label"])
-    return "Run `pathscout review`, choose a finding, then run `pathscout thesis <finding-id>`."
+            return item
+    return {
+        "label": "Keep reviewing opportunities",
+        "status": "ready",
+        "detail": "Run `pathscout review`, choose a finding, then run `pathscout thesis <finding-id>`.",
+        "optional": False,
+        "done": False,
+    }
 
 
 def first_run_sequence() -> list[str]:

@@ -42,12 +42,15 @@ python3 -m pathscout run --dry-run --format both
 
 ```bash
 pathscout start
+pathscout next
 pathscout init
 pathscout doctor
 pathscout run --format both
 ```
 
 `pathscout start` is a read-only startup checklist. It shows what exists, what is missing, and the next recommended command without creating or editing files.
+
+`pathscout next` prints only the next recommended action. `/next` is also accepted as an alias.
 
 During `init`, PathScout asks two onboarding questions in this order:
 
@@ -135,6 +138,7 @@ The v0.2 runner supports standard-library fetches for:
 
 ```bash
 pathscout start
+pathscout next
 pathscout init
 pathscout doctor
 pathscout watchlist

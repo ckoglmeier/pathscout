@@ -111,6 +111,46 @@ class ConfigArtifactTests(unittest.TestCase):
         self.assertIn("pathscout thesis <finding-id>", text)
         self.assertIn("Network source fetches collect evidence; they are not hosted storage or sync.", text)
 
+    def test_next_prints_only_next_action_before_init(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                output = StringIO()
+                with redirect_stdout(output):
+                    rc = main(["next"])
+                text = output.getvalue()
+                self.assertFalse(Path("config").exists())
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(rc, 0)
+        self.assertIn("PathScout next", text)
+        self.assertIn("Step: Initialize local config", text)
+        self.assertIn("Action: Run `pathscout init` to create config files.", text)
+        self.assertIn("Run `pathscout start` for the full checklist.", text)
+        self.assertNotIn("First-run sequence:", text)
+
+    def test_next_alias_points_to_environment_and_role_when_init_is_incomplete(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                write_json(Path("config/profile.json"), profile_config())
+                write_json(Path("config/sources.json"), sources_config())
+                write_json(Path("config/watchlist.json"), watchlist_config())
+                write_json(Path("config/suppressions.json"), {"schema_version": 1, "suppressions": []})
+                output = StringIO()
+                with redirect_stdout(output):
+                    rc = main(["/next"])
+                text = output.getvalue()
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(rc, 0)
+        self.assertIn("Step: Answer environment and role", text)
+        self.assertIn("Action: Run `pathscout init` interactively or pass `--environment` and `--role`.", text)
+
     def test_start_marks_existing_setup_and_artifacts(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cwd = os.getcwd()
