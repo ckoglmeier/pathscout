@@ -17,6 +17,7 @@ from .config import (
     DEFAULT_WATCHLIST,
     apply_onboarding_answers,
     build_runtime_config,
+    default_background,
     ensure_default_files,
     load_background,
     load_profile,
@@ -55,6 +56,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     next_parser = subparsers.add_parser("next", aliases=["/next"], help="Show the next recommended PathScout action.")
     add_startup_paths(next_parser)
+
+    setup_parser = subparsers.add_parser("setup", help="Run the guided local setup flow.")
+    add_config_paths(setup_parser)
+    setup_parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Path to private background JSON.")
 
     init_parser = subparsers.add_parser("init", help="Create sample config and local folders.")
     add_config_paths(init_parser)
@@ -154,6 +159,142 @@ def collect_onboarding_answers(environment: str | None, role: str | None, no_inp
     return resolved_environment, resolved_role
 
 
+def setup_command(
+    profile_path: Path,
+    sources_path: Path,
+    watchlist_path: Path,
+    suppressions_path: Path,
+    background_path: Path,
+) -> int:
+    if not sys.stdin.isatty():
+        print("Setup requires an interactive terminal. Run `pathscout setup` locally, or edit config/profile.json directly.")
+        return 2
+    ensure_default_files(profile_path, sources_path, watchlist_path, suppressions_path, DEFAULT_PORTFOLIO, background_path)
+
+    print("PathScout setup")
+    print("Press Enter to skip optional prompts. Answers are saved after each step.")
+    print("")
+
+    profile = read_json_or_empty(profile_path)
+    background = load_setup_background(background_path)
+
+    setup_profile(profile_path, profile)
+    setup_background(background_path, background)
+
+    print("")
+    print("Setup saved.")
+    print("Next: run `pathscout doctor`, then `pathscout run --dry-run --format both`.")
+    return 0
+
+
+def setup_profile(profile_path: Path, profile: dict[str, object]) -> None:
+    environment = prompt_for_field(
+        profile,
+        "environment_preferences",
+        "1. What is the right environment for you? ",
+        list_field=True,
+    )
+    if environment:
+        write_json_file(profile_path, profile)
+
+    role = prompt_for_field(
+        profile,
+        "role_preferences",
+        "2. What is the right role/function for you? ",
+        list_field=True,
+    )
+    if role:
+        target_roles = profile.setdefault("target_roles", [])
+        if isinstance(target_roles, list):
+            normalized_roles = {str(value).strip().lower() for value in target_roles}
+            for value in clean_csv(role):
+                if value.lower() not in normalized_roles:
+                    target_roles.insert(0, value)
+                    normalized_roles.add(value.lower())
+        write_json_file(profile_path, profile)
+
+    for field, prompt in [
+        ("preferred_locations", "3. Preferred locations? "),
+        ("exception_locations", "4. Exception locations you would consider? "),
+        ("exclude_domains", "5. Domains to exclude? "),
+    ]:
+        if prompt_for_field(profile, field, prompt, list_field=True):
+            write_json_file(profile_path, profile)
+
+    scoring = profile.setdefault("scoring", {})
+    if isinstance(scoring, dict):
+        answer = prompt_value("6. Role terms to avoid? ", scoring.get("negative_role_terms"))
+        if answer:
+            scoring["negative_role_terms"] = clean_csv(answer)
+            write_json_file(profile_path, profile)
+
+
+def setup_background(background_path: Path, background: dict[str, object]) -> None:
+    changed = False
+    summary = prompt_for_field(
+        background,
+        "summary",
+        "7. Short background summary? ",
+        list_field=False,
+    )
+    changed = bool(summary) or changed
+
+    for field, prompt in [
+        ("strengths", "8. Strengths to match against opportunities? "),
+        ("proof_points", "9. Proof points / wins? "),
+        ("best_environments", "10. Environments where you do your best work? "),
+        ("avoid_environments", "11. Environments to avoid? "),
+        ("constraints", "12. Constraints PathScout should remember? "),
+        ("network_context", "13. Network context / warm paths? "),
+    ]:
+        changed = bool(prompt_for_field(background, field, prompt, list_field=True)) or changed
+        if changed:
+            write_json_file(background_path, background)
+
+    if changed:
+        write_json_file(background_path, background)
+
+
+def prompt_for_field(data: dict[str, object], field: str, prompt: str, list_field: bool) -> str:
+    answer = prompt_value(prompt, data.get(field))
+    if not answer:
+        return ""
+    data[field] = clean_csv(answer) if list_field else answer
+    return answer
+
+
+def prompt_value(prompt: str, current: object | None) -> str:
+    current_text = format_current_value(current)
+    suffix = f" [{current_text}]" if current_text else ""
+    return input(f"{prompt}{suffix} ").strip()
+
+
+def format_current_value(current: object | None) -> str:
+    if isinstance(current, list):
+        return ", ".join(str(item).strip() for item in current if str(item).strip())
+    return str(current or "").strip()
+
+
+def load_setup_background(path: Path) -> dict[str, object]:
+    if path.exists():
+        return read_json_or_empty(path)
+    background = default_background()
+    background["summary"] = ""
+    for field in ["strengths", "proof_points", "best_environments", "avoid_environments", "constraints", "network_context"]:
+        background[field] = []
+    write_json_file(path, background)
+    return background
+
+
+def clean_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def write_json_file(path: Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -186,6 +327,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "setup":
+        return setup_command(
+            Path(args.profile),
+            Path(args.sources),
+            Path(args.watchlist),
+            Path(args.suppressions),
+            Path(args.background),
+        )
+
     if args.command == "init":
         profile_path = Path(args.profile)
         ensure_default_files(
@@ -200,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
         if environment or role:
             apply_onboarding_answers(profile_path, environment, role)
         print(f"Initialized PathScout config in {Path(args.sources).parent}")
+        print("Next: run `pathscout setup` to finish guided local configuration.")
         return 0
 
     if args.command == "run":

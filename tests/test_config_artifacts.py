@@ -205,7 +205,9 @@ class ConfigArtifactTests(unittest.TestCase):
             cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
-                self.assertEqual(main(["init", "--no-input"]), 0)
+                output = StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(main(["init", "--no-input"]), 0)
                 for path in [
                     "config/profile.json",
                     "config/background.sample.json",
@@ -216,8 +218,112 @@ class ConfigArtifactTests(unittest.TestCase):
                 ]:
                     self.assertTrue(Path(path).exists(), path)
                 self.assertFalse(Path("config/background.local.json").exists())
+                self.assertIn("Next: run `pathscout setup`", output.getvalue())
             finally:
                 os.chdir(cwd)
+
+    def test_setup_walks_profile_and_background_in_order(self):
+        answers = iter(
+            [
+                "Seed-stage companies with founder access",
+                "Product and Commercialization Lead",
+                "Remote, Denver",
+                "New York",
+                "Healthcare",
+                "TPM, technical program manager",
+                "Product and GTM operator.",
+                "Turns ambiguous customer problems into product direction, Builds early GTM systems",
+                "Scaled pilots into deployments",
+                "Founder-led teams with high ambiguity",
+                "TPM-heavy environments",
+                "Low travel",
+                "Acme: Jane can make intro",
+            ]
+        )
+        prompts = []
+
+        def fake_input(prompt):
+            prompts.append(prompt)
+            return next(answers)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                output = StringIO()
+                with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=fake_input), redirect_stdout(output):
+                    rc = main(["setup"])
+                profile = json.loads(Path("config/profile.json").read_text(encoding="utf-8"))
+                background = json.loads(Path("config/background.local.json").read_text(encoding="utf-8"))
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(prompts[0].startswith("1. What is the right environment for you?"))
+        self.assertTrue(prompts[1].startswith("2. What is the right role/function for you?"))
+        self.assertEqual(profile["environment_preferences"], ["Seed-stage companies with founder access"])
+        self.assertEqual(profile["role_preferences"], ["Product and Commercialization Lead"])
+        self.assertEqual(profile["preferred_locations"], ["Remote", "Denver"])
+        self.assertEqual(profile["exception_locations"], ["New York"])
+        self.assertEqual(profile["scoring"]["negative_role_terms"], ["TPM", "technical program manager"])
+        self.assertEqual(background["summary"], "Product and GTM operator.")
+        self.assertIn("Builds early GTM systems", background["strengths"])
+        self.assertEqual(background["proof_points"], ["Scaled pilots into deployments"])
+        self.assertEqual(background["avoid_environments"], ["TPM-heavy environments"])
+        self.assertEqual(background["network_context"], ["Acme: Jane can make intro"])
+        self.assertIn("Next: run `pathscout doctor`", output.getvalue())
+
+    def test_setup_requires_interactive_terminal(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                output = StringIO()
+                with patch("sys.stdin.isatty", return_value=False), redirect_stdout(output):
+                    rc = main(["setup"])
+                config_exists = Path("config").exists()
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(rc, 2)
+        self.assertFalse(config_exists)
+        self.assertIn("Setup requires an interactive terminal", output.getvalue())
+
+    def test_setup_enter_preserves_existing_values(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                write_json(Path("config/profile.json"), {**profile_config(), "environment_preferences": ["Remote"], "role_preferences": ["Product Lead"]})
+                write_json(Path("config/sources.json"), sources_config())
+                write_json(Path("config/watchlist.json"), watchlist_config())
+                write_json(Path("config/suppressions.json"), {"schema_version": 1, "suppressions": []})
+                write_json(
+                    Path("config/background.local.json"),
+                    {
+                        "schema_version": 1,
+                        "summary": "Existing summary.",
+                        "strengths": ["Existing strength"],
+                        "proof_points": [],
+                        "best_environments": [],
+                        "avoid_environments": [],
+                        "constraints": [],
+                        "network_context": [],
+                    },
+                )
+                answers = iter([""] * 13)
+                with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=lambda prompt: next(answers)), redirect_stdout(StringIO()):
+                    rc = main(["setup"])
+                profile = json.loads(Path("config/profile.json").read_text(encoding="utf-8"))
+                background = json.loads(Path("config/background.local.json").read_text(encoding="utf-8"))
+            finally:
+                os.chdir(cwd)
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(profile["environment_preferences"], ["Remote"])
+        self.assertEqual(profile["role_preferences"], ["Product Lead"])
+        self.assertEqual(background["summary"], "Existing summary.")
+        self.assertEqual(background["strengths"], ["Existing strength"])
 
     def test_init_stores_onboarding_answers_in_order(self):
         prompts = []

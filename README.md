@@ -44,6 +44,7 @@ python3 -m pathscout run --dry-run --format both
 pathscout start
 pathscout next
 pathscout init
+pathscout setup
 pathscout doctor
 pathscout run --format both
 ```
@@ -51,6 +52,8 @@ pathscout run --format both
 `pathscout start` is a read-only startup checklist. It shows what exists, what is missing, and the next recommended command without creating or editing files.
 
 `pathscout next` prints only the next recommended action. `/next` is also accepted as an alias.
+
+`pathscout setup` is an interactive guided setup flow. It walks through environment, role/function, locations, avoid terms, background, proof points, constraints, and network context in order, saving answers into local JSON files as it goes.
 
 During `init`, PathScout asks two onboarding questions in this order:
 
@@ -140,6 +143,7 @@ The v0.2 runner supports standard-library fetches for:
 pathscout start
 pathscout next
 pathscout init
+pathscout setup
 pathscout doctor
 pathscout watchlist
 pathscout portfolio
